@@ -17,7 +17,7 @@ services:
       - n8n_net
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.6
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
