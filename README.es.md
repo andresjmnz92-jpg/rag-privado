@@ -264,7 +264,11 @@ Van escritos porque un resultado sin sus límites no es un resultado.
    `bge-reranker-v2-m3` corre en el mismo Ollama. El costo es latencia, en CPU sin GPU, y **ninguna
    fuente que encontré da una cifra medida de cuánto** — así que se mide aquí.
 2. **Búsqueda híbrida (BM25 + vectorial)** con Reciprocal Rank Fusion — un índice GIN sobre
-   `tsvector` al lado del vectorial, sin infraestructura nueva.
+   `tsvector` al lado del vectorial, sin infraestructura nueva. **Con el peso cargado al lado
+   léxico**, siguiendo a [ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual):
+   su reparto 70/30 a favor de BM25 *"works well for technical documentation where users often
+   search for specific terms, function names, or error messages."* Un corpus de `§ 164.404` y
+   `(c)(1)(A)` es justo eso — y es el caso donde la búsqueda vectorial sola es más débil.
 3. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
    generación.
 

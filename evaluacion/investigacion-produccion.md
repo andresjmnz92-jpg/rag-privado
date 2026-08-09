@@ -1,215 +1,285 @@
-# Qué le falta a este RAG para ser un proyecto de verdad
+# What this RAG still needs to be a real system
 
-*Investigación del 9 de agosto de 2026 · 12 fuentes · Escrita contra el estado real del sistema,
-no contra un RAG genérico.*
+*Research, 9 August 2026 · Written against the actual state of this system, not a generic RAG ·
+**Every quotation fetched from its source page and checked word by word** — see the audit at the
+end, including the four claims that did not survive it.*
 
-## Resumen
+## Short version
 
-Lo que falta no es una lista de mejoras: son **tres cosas que fallan por la misma razón** —el
-sistema recupera bien y elige mal— más la instrumentación para demostrarlo.
+What's missing isn't a list of improvements: it's **three things that fail for the same reason** —
+retrieval brings back the right topic and the wrong ranking — plus the instrumentation to prove it.
 
-Y hay un hallazgo que reordena todo lo demás: **`topK: 20` sin reranking es un antipatrón
-documentado**, y explica un resultado que ya habíamos medido sin entenderlo.
+And one finding reorders everything else: **`topK: 20` without reranking is a documented
+anti-pattern**, and it explains a result we had already measured without understanding.
 
 ---
 
-## 1. El hallazgo: "Lost in the Middle"
+## 1. The finding: "Lost in the Middle"
 
-El checklist de ingeniería de
-[ActiveWizards](https://activewizards.com/blog/the-production-ready-rag-pipeline-an-engineering-checklist)
-lo dice como regla dura:
+The engineering checklist from [ActiveWizards](https://activewizards.com/blog/the-production-ready-rag-pipeline-an-engineering-checklist)
+has a section titled exactly that, and it is written as a question you are supposed to fail:
 
-> **"No devuelvas más de 10 documentos sin reranking."** Previene que el LLM ignore la
-> información del medio del contexto.
+> *"Does your retrieval process return too many documents (e.g., >10)? LLMs often ignore
+> information buried in the middle of a large context window. Are you using a **reranker** to put
+> the most relevant chunks at the beginning and end of the context?"*
 
-Nosotros pusimos `topK: 20`. Y los datos propios encajan con la predicción, punto por punto:
+We set `topK: 20`. And our own measurements match the prediction, point by point:
 
-| Lo medido | Lo que predice el fenómeno |
+| What we measured | What the phenomenon predicts |
 |---|---|
-| Subir de 5 a 20 arregló 4 respuestas **y rompió la 16** | Más contexto sube el recall y baja la atención al medio |
-| El elemento intruso del § 164.410 estaba en el **puesto 2** | El principio del contexto pesa mucho |
-| El elemento **(E)** correcto estaba en el **puesto 15** | El medio-final es la zona que se pierde |
+| Going from 5 to 20 fixed 4 answers **and broke Q16** | More context lifts recall and lowers attention to the middle |
+| The intruding § 164.410 fragment sat at **rank 2** | The start of the context carries weight |
+| The correct element **(E)** sat at **rank 15** | The middle-to-late zone is what gets lost |
 
-**El `topK: 20` no fue una solución: fue cambiar un problema por otro.** Compró recall pagando
-con precisión. Lo que la literatura recomienda para eso no es bajar el `topK` —eso devuelve el
-problema original— sino **recuperar 20 y reordenarlos con un reranker antes de pasárselos al
-redactor**.
+**Raising `topK` was not a fix: it was trading one problem for another.** It bought recall and paid
+in precision.
 
-Anthropic lo midió: sumar reranking baja el fallo de recuperación de **2.9% a 1.9%**
-([Anthropic Engineering](https://www.anthropic.com/engineering/contextual-retrieval)).
+Note what the checklist actually prescribes — not "return fewer documents", but **a reranker that
+moves the best chunks to the beginning and end**. The ends are where the model looks.
+
+Anthropic measured the payoff: adding reranking takes retrieval failure from **2.9% to 1.9%**
+([Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval)).
 
 ---
 
-## 2. Lo que ya está resuelto (para no rehacerlo)
+## 2. Already solved, so it doesn't get rebuilt
 
-| Pieza | Estado |
+| Piece | State |
 |---|---|
-| Embeddings locales, documentos que no salen del servidor | Hecho, es el argumento de venta |
-| Corpus estructurado por secciones, con `§` y cita en metadatos | Hecho el 9 ago |
-| Corpus vigente, con fecha de la propia fuente | Hecho — eCFR al 6 ago 2026 |
-| Procedencia que viaja con el fragmento | Hecho — `source`, `citation`, `retrieved` |
-| Golden dataset con respuestas verificadas a mano | Hecho — 20 preguntas, la parte cara |
-| Preguntas de control (tasa de alucinación) | Hecho — 4/4, resultado 0 |
-| Prompt que obliga a callarse | Hecho, y medido |
-| Carga autenticada, sin puertos publicados | Hecho |
-| Separar fallo de recuperación de fallo de generación | Hecho el 9 ago, leyendo la ejecución |
+| Local embeddings, documents never leave the server | Done — it's the sales argument |
+| Section-structured corpus, with `§` and citation in metadata | Done, 9 Aug |
+| Current corpus, dated by its own source | Done — eCFR as of 6 Aug 2026 |
+| Provenance travelling with the fragment | Done — `source`, `citation`, `retrieved` |
+| Golden dataset with hand-verified answers | Done — 20 questions, the expensive part |
+| Control questions (hallucination rate) | Done — 4/4, result 0 |
+| A prompt that forces silence when it doesn't know | Done, and measured |
+| Authenticated ingestion, no published ports | Done |
+| Telling retrieval failures from generation failures | Done, 9 Aug, by reading the retrieval step |
 
-Eso no es poco: la mitad de la lista de producción de ActiveWizards ya está cubierta.
-
----
-
-## 3. Lo que falta para arreglar los números medidos
-
-Ordenado por cuánto mueve el resultado, no por dificultad.
-
-### 3.1 Reranking — el que arregla el problema de fondo
-
-Se recuperan 20 y un modelo pequeño los reordena por relevancia real antes de pasar los mejores
-al redactor. Es una segunda pasada, cara pero solo sobre 20 candidatos
-([ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual)).
-
-El modelo que encaja con el stack es **`bge-reranker-v2-m3`** — misma familia que BGE-M3, también
-multilingüe, y corre en Ollama.
-
-**Lo que arregla, de lo ya medido:** la pregunta 16 (rota por ruido) y el intruso del § 164.410
-(que quedaría abajo, no en el puesto 2).
-
-**El coste:** una llamada más por pregunta, en CPU sin GPU. La latencia sube.
-
-### 3.2 Búsqueda híbrida (BM25 + vectorial)
-
-Los embeddings buscan por significado y son **malos con cadenas exactas**: un `164.404` literal.
-BM25 es exactamente lo contrario. Los sistemas de producción corren las dos y fusionan con
-**Reciprocal Rank Fusion**.
-
-En Postgres no hace falta infraestructura nueva: un índice **GIN sobre `tsvector`** al lado del
-vectorial ([Ben Moataz](https://www.benmoataz.com/posts/hybrid-search-pgvector-bm25),
-[DEV](https://dev.to/gabrielanhaia/hybrid-search-in-100-lines-bm25-pgvector-with-rrf-merge-58cn)).
-
-**Por qué importa aquí en concreto:** el corpus está lleno de identificadores (`§ 164.404`,
-`(c)(1)(A)`). Es el caso donde el vector solo pierde. *Cita textual de las fuentes: "hybrid-in-Postgres
-es la decisión correcta cuando tus datos ya viven en Postgres y tus consultas mezclan significado
-con identificadores".*
-
-### 3.3 El índice vectorial
-
-Hoy la tabla solo tiene la clave primaria: cada búsqueda recorre los 653 fragmentos uno por uno.
-Con este corpus no se nota; a escala sí.
-
-Configuración de producción citada para HNSW: **`m=16`, `ef_construction=64`**.
-
-**Honesto: con 653 filas esto no cambia ningún número medible.** Se hace por lo que enseña y
-porque es una línea, no porque arregle algo hoy.
-
-### 3.4 Fusionar los fragmentos-encabezado
-
-Dos de los 20 fragmentos recuperados en la prueba eran **solo el título** de la sección
-(`## § 164.404 Notification to individuals.`). Ocupan un puesto y no aportan nada — un 10% del
-contexto desperdiciado. Se arregla al cargar, pegando el encabezado al primer párrafo.
+That covers about half of the ActiveWizards checklist already.
 
 ---
 
-## 4. Lo que falta para poder enseñarlo
+## 3. What's missing to fix the measured numbers
 
-### 4.1 Evaluación automática con métricas separadas
+Ordered by how much it moves the result, not by difficulty.
 
-Hoy la evaluación es manual y mide **la respuesta final**. El estándar es **RAGAS**, que separa
-lo que hoy va junto ([Prem AI](https://blog.premai.io/rag-evaluation-metrics-frameworks-testing-2026/),
-[Digital Applied](https://www.digitalapplied.com/blog/rag-system-metrics-recall-precision-faithfulness-2026)):
+### 3.1 Reranking — the one that addresses the cause
 
-| Métrica | Qué mide | Objetivo citado |
+Retrieve 20, let a small model reorder them by real relevance, then hand the best ones to the
+writer. It's a second pass, expensive but only over 20 candidates.
+
+The model that fits this stack is **`bge-reranker-v2-m3`** — same family as BGE-M3, also
+multilingual, and it runs on Ollama. *(Model choice is mine; no source recommends it for this
+specific case.)*
+
+**What it fixes, of what we already measured:** Q16, broken by noise, and the § 164.410 fragment
+that reached rank 2.
+
+**The cost:** one more call per question, on CPU with no GPU. Latency goes up, and I found no
+measured figure for how much — so it gets measured here.
+
+### 3.2 Hybrid search (BM25 + vector)
+
+Embeddings search by meaning and are **bad at exact strings** — a literal `164.404`. BM25 is the
+opposite. ActiveWizards puts it as a checklist item: *"Production systems should use hybrid search,
+combining semantic (vector) search with traditional full-text or metadata filtering to improve
+precision."*
+
+[ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual) explains
+why you can't just merge the two naively:
+
+> *"you can't just add BM25 scores to vector similarity scores. They're measured on completely
+> different scales."*
+
+The answer is **Reciprocal Rank Fusion**, which ignores scores and works on rankings:
+
+```
+RRF(document) = Σ 1 / (k + rank_i(document))
+```
+
+with `k` typically 60. And it works best on the top candidates from each system rather than on
+whole result sets.
+
+**The detail that applies directly here** is their weighted variant. Their 70% lexical / 30%
+semantic configuration, in their words:
+
+> *"emphasizes lexical matching over semantic similarity, which works well for technical
+> documentation where users often search for specific terms, function names, or error messages."*
+
+A corpus of `§ 164.404` and `(c)(1)(A)` is exactly that. **Our weights should favour BM25**, which
+is the opposite of what a vector-only system does.
+
+No new infrastructure: a GIN index over `tsvector` alongside the vector one, in the Postgres that
+is already running.
+
+### 3.3 The vector index
+
+Today the table has only its primary key: every search scans all 653 fragments one by one. It
+doesn't show at this size; it will.
+
+**Honest: with 653 rows this changes no measurable number.** It gets done for what it teaches and
+because it's one statement, not because it fixes anything today.
+
+### 3.4 Merge the heading-only fragments
+
+Two of the 20 retrieved fragments in the Q6 trace were **just the section title** — one line each.
+They take a slot and contribute nothing: 10% of the context wasted. Fixed at load time by attaching
+the heading to the first paragraph.
+
+---
+
+## 4. What's missing to be able to show it
+
+### 4.1 Automatic evaluation with separated metrics
+
+Today the evaluation is manual and grades **the final answer**. The standard splits what we
+currently merge ([Digital Applied](https://www.digitalapplied.com/blog/rag-system-metrics-recall-precision-faithfulness-2026)):
+
+> *"Recall at k asks whether at least one relevant chunk appeared in the top-k retrieved
+> candidates; precision at k asks what fraction of the top-k chunks were actually relevant."*
+
+Their thresholds, verbatim:
+
+| Metric | Threshold |
+|---|---|
+| **Recall@10** | *"If recall@10 is below 0.85, no downstream tuning matters — the generator never saw the right context to work with."* |
+| Recall@k | ≥ 0.75 |
+| Precision@k | ≥ 0.45 at k=10 |
+| **Faithfulness** | *"90% is the production target; below 70% the system is unsafe to ship."* |
+| Faithfulness 70–90% | *"Usable with explicit 'verify the cited source' UX."* |
+| **Citation accuracy** | Target **0.92** |
+
+Faithfulness is defined precisely: *"of the factual claims made in the answer, what fraction can be
+supported by the retrieved context."*
+
+**And citation accuracy is the metric for the failure we found by hand.** Their description of what
+it catches:
+
+> *"the worst failure mode — well-cited answers where the cited chunk says something different from
+> the claim."*
+
+That is questions 8 and 15 of our evaluation, word for word. We found them by opening every
+citation manually. There is a standard metric for it.
+
+### 4.2 Getting past 50 questions
+
+Nobody puts the floor below 50 — see the sources in
+[investigacion-chunking.md](investigacion-chunking.md#5-how-serious-teams-evaluate). We're at 20.
+It's the slow part and there's no shortcut: every answer comes out of the document by hand.
+
+### 4.3 End-to-end tracing
+
+Record per query: what was asked, which fragments came back with what score, what was answered, how
+long it took, what it cost. Today that lives in n8n's executions and can be read — we did it — but
+it isn't stored and can't be aggregated.
+
+Without it, every diagnosis is manual archaeology.
+
+---
+
+## 5. What's missing to charge for it
+
+Not more engineering: this is what separates a demo from something you can sell to a clinic.
+Source: Tim Freestone, [Kiteworks](https://www.kiteworks.com/hipaa-compliance/healthcare-rag-hipaa-compliance-controls/).
+
+The scope, first:
+
+> *"HIPAA's requirements for access controls, audit trails, encryption, and business associate
+> agreements apply fully to RAG workflows."*
+
+**An audit log, and a specific one.** Not "log the queries":
+
+> *"For RAG deployments, this means capturing who accessed which patient records, when retrieval
+> occurred, what context combined into prompts, which models processed data, and who received
+> responses."*
+
+And it has to be tamper-proof: *"cryptographic signatures or write-once storage to ensure logs
+can't be altered after creation."* We have none of this.
+
+**Access control during retrieval, not after:**
+
+> *"Data-aware filtering evaluates each retrieved document against the user's specific permissions
+> before including it in the context sent to language models."*
+
+Today any query sees everything. Fine for public regulation; not for a clinic's records.
+
+**And the one that decides the architecture.** On third-party model APIs:
+
+> *"Third-party model APIs reduce operational complexity but introduce dependencies on vendors
+> whose terms of service may conflict with HIPAA's requirements for data use limitations and audit
+> access."*
+
+Plus a clause most people never think about:
+
+> *"The business associate agreement should explicitly address model training, requiring that
+> protected health information never contributes to model improvement without prior authorization
+> and appropriate de-identification."*
+
+**This is what pushes toward the local model.** Right now `gpt-5-mini` writes the answers, which
+means retrieved fragments leave the server. With public regulation that's harmless. With PHI it
+needs a signed BAA — and at that point *"everything stays on your server"* stops being marketing
+and becomes the requirement.
+
+---
+
+## 6. What is NOT missing
+
+As important as the list above.
+
+- **Query caching, model routing, cost-based degradation.** Volume optimisations. With one user
+  asking 20 questions they save nothing.
+- **Switching vector database.** Postgres with pgvector handles millions of vectors. ParadeDB's own
+  argument for staying: *"everything runs in your existing database with ACID guarantees and
+  transactional consistency."*
+- **Reindexing with Anthropic's Contextual Retrieval.** Best measured numbers, but it means running
+  every fragment through an LLM. **Structure-based chunking already captured much of that gain** —
+  evaluate it after measuring with reranking, not before.
+- **Rewriting anything in Python.** Everything above fits in the n8n already running.
+
+---
+
+## Recommendation
+
+**One, with its trade-off: reranking first, measured before and after with the same 20 questions.**
+
+It attacks the cause the data already points at — good retrieval, bad selection — and it is the one
+change that fixes **both open failures at once**: the noise that broke Q16 and the § 164.410
+fragment at rank 2.
+
+**The trade-off:** latency goes up. The median today is 16 s and the reranker adds a pass on CPU
+with no GPU. If it climbs to 25–30 s, a live chat feels slow — and that matters for a demo. Measure
+it, don't assume it.
+
+**Order after that:** hybrid search with BM25-weighted RRF → trace logging → past 50 questions →
+automated metrics. The compliance block gets built when there is a real client, not before:
+building controls for data that doesn't exist yet is the definition of premature.
+
+---
+
+## Source audit
+
+Every quotation above was fetched from its page on 9 August 2026 and checked word by word.
+**Four claims from the first version of this document did not survive.** They are listed rather
+than quietly deleted.
+
+| Claim | Attributed to | What the page actually says |
 |---|---|---|
-| **Faithfulness** | Qué parte de la respuesta se puede verificar contra los fragmentos | 0.75 |
-| **Answer relevancy** | Si responde lo que se preguntó | 0.80 |
-| **Context precision** | Qué parte de lo recuperado era relevante | 0.70 |
-| **Context recall** | Qué parte de lo necesario llegó a recuperarse | 0.80 |
+| RAGAS targets: faithfulness **0.75**, answer relevancy **0.8**, context precision **0.7**, context recall **0.8** | Digital Applied | None of those four numbers appear. The real thresholds are stricter and differently framed: faithfulness **90%** as production target and **below 70% unsafe to ship**; **recall@10 ≥ 0.85**; citation accuracy **0.92** |
+| *"Reranking is stage two, with expensive precise scoring run only over the fused top-N"* | ParadeDB | Not on the page. It does say RRF *"works best with the top candidates from each system"*, which is related but not the same claim |
+| HNSW parameters **m=16, ef_construction=64** as production settings | ParadeDB | No index parameters on the page. This came from a search-result summary that blended several sources, and was never opened |
+| *"Two distinct PII leak vectors: ingestion and inference"* | Kiteworks | Not on that page. It belongs to a different vendor's page that was never read |
 
-Con estas cuatro, el fallo del § 164.410 se lee solo: **context precision baja, faithfulness
-alta** — recuperó de más y el redactor lo usó.
+**What this changes about the conclusion: nothing.** The three sources carrying the argument —
+ActiveWizards on Lost in the Middle, ParadeDB on RRF, Kiteworks on HIPAA controls — **verified
+verbatim**, and two of them turned out to say something more useful than what I had attributed to
+them: the reranker moves chunks *to the beginning and end*, and the weighted-RRF configuration for
+identifier-heavy corpora.
 
-*Nota: las cuatro se calculan con un LLM de juez. Eso cuesta dinero por corrida y hay que
-presupuestarlo.*
+**The pattern is the same one from the chunking research:** what fell were the round, quotable
+claims. What held were the ones with ugly numbers attached.
 
-### 4.2 Llegar a 50 preguntas
-
-La guía de practicantes pone el golden dataset inicial en **50–100**
-([Qdrant](https://qdrant.tech/blog/rag-evaluation-guide/)). Vamos por 20. Es la parte lenta y no
-hay atajo: cada respuesta se saca a mano del documento.
-
-### 4.3 Trazabilidad de extremo a extremo
-
-Registrar por consulta: qué se preguntó, qué fragmentos se recuperaron con qué puntaje, qué
-respondió, cuánto tardó, cuánto costó. Hoy eso vive en las ejecuciones de n8n y se puede leer
-—lo hicimos— pero no queda guardado ni se puede sumar.
-
-Sin esto, cada diagnóstico es una arqueología manual.
-
----
-
-## 5. Lo que falta para cobrar por él
-
-Esto no es "más ingeniería": es lo que separa un demo de algo que se le puede vender a una
-clínica. Fuente: [Kiteworks](https://www.kiteworks.com/hipaa-compliance/healthcare-rag-hipaa-compliance-controls/).
-
-- **Registro de auditoría.** *"HIPAA exige un rastro de auditoría completo de cada acceso a PHI:
-  quién consultó qué, cuándo y con qué rol."* Hoy no existe.
-- **Control de acceso al recuperar, no después.** *"Filtrar durante la recuperación, no después;
-  el dato no autorizado nunca debe entrar en la tubería."* Hoy cualquier consulta ve todo.
-- **Dos vectores de fuga de PII: la ingesta y la inferencia.** El corpus actual es normativa
-  pública, así que no aplica todavía — el día que entre un documento de cliente, sí.
-- **Defensa contra inyección de prompt.** Un documento cargado puede traer instrucciones dentro.
-- **Control de gasto por usuario.** Hoy el único freno es el tope de la cuenta de OpenAI.
-- **Un BAA con el proveedor del modelo.** Si el redactor es una API externa y el documento es
-  PHI, hace falta acuerdo firmado. **Esto empuja hacia el modelo local**, y ahí el argumento
-  "todo se queda en tu servidor" deja de ser marketing y pasa a ser el requisito.
-
----
-
-## 6. Lo que NO hace falta
-
-Tan importante como la lista de arriba.
-
-- **Caché de consultas, enrutamiento de modelos, degradación por coste.** Son optimizaciones para
-  volumen. Con un usuario haciendo 20 preguntas no ahorran nada.
-- **Cambiar de base vectorial.** Postgres con pgvector aguanta millones de vectores. Cambiar a
-  Pinecone o Qdrant aquí sería gasto y una dependencia más.
-- **Reindexar con Contextual Retrieval de Anthropic.** Da los mejores números medidos, pero exige
-  pasar cada fragmento por un LLM. **El chunking por estructura ya recogió buena parte de esa
-  ganancia** — se evalúa después de medir con reranking, no antes.
-- **Reescribir nada en Python.** Todo lo de arriba se puede montar en n8n con lo que ya hay.
-
----
-
-## Recomendación
-
-**Una, con su trade-off: reranking primero, y medir antes y después con las mismas 20 preguntas.**
-
-Es lo que ataca la causa que los datos ya señalan —recuperación buena, elección mala— y es el
-único cambio que arregla **los dos fallos abiertos a la vez**: el ruido que rompió la 16 y el
-intruso del § 164.410.
-
-**El trade-off:** la latencia sube. Hoy la mediana es 16 s y el reranker añade una pasada por CPU
-sin GPU. Si sube a 25–30 s, un chat en vivo se siente lento — y eso importa para una demo. Se
-mide, no se supone.
-
-**El orden después:** híbrida (BM25) → registro de trazas → llegar a 50 preguntas → RAGAS.
-El bloque de cumplimiento se monta cuando haya un cliente real, no antes: hacerlo hoy sería
-construir controles para datos que todavía no existen.
-
----
-
-## Metodología y límites
-
-12 fuentes consultadas, 1 leída completa. Frentes investigados: qué separa un RAG de demo de uno
-de producción; búsqueda híbrida y reranking sobre Postgres; estándares de evaluación; requisitos
-del sector salud.
-
-**Lo que no encontré:**
-
-- **Ninguna cifra medida de cuánto sube la latencia** un reranker en CPU sin GPU. Todas las
-  fuentes lo dan por asumido. Hay que medirlo aquí.
-- **Los objetivos de RAGAS (0.75 / 0.8 / 0.7 / 0.8) vienen de una sola fuente** y sin estudio
-  detrás. Tratarlos como orden de magnitud.
-- **La regla de "no más de 10 sin reranking"** se cita como práctica de ingeniería, no como
-  resultado de un experimento publicado. Lo que sí es dato duro es que **nuestra propia medición
-  la respalda**: subir a 20 rompió una respuesta que funcionaba.
+**And one method note.** The Microsoft page in the other research document returned only its title
+through a plain fetch, and the first version of that audit wrote the claim off as unverifiable. A
+different scraping tool recovered the full text on the first try. **A tool returning nothing is not
+evidence that nothing is there.**

@@ -257,7 +257,11 @@ Stated because a result without its limits isn't a result.
    runs on the same Ollama instance. The cost is latency on CPU with no GPU, and **no source I found
    gives a measured figure for that** — so it gets measured here.
 2. **Hybrid search (BM25 + vector)** with Reciprocal Rank Fusion — a GIN index over `tsvector`
-   alongside the vector one, no new infrastructure.
+   alongside the vector one, no new infrastructure. **Weighted toward the lexical side**, following
+   [ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual): their
+   70/30 lexical split *"works well for technical documentation where users often search for
+   specific terms, function names, or error messages."* A corpus of `§ 164.404` and `(c)(1)(A)` is
+   exactly that — and it's the case where vector-only search is weakest.
 3. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
    failure.
 
