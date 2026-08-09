@@ -207,8 +207,12 @@ tamaño no es la palanca — **dónde se corta, sí**.
 
 **"Limitar `maxTokens` para controlar la latencia."**
 `maxTokens` recorta la salida: trata el síntoma. Para los modelos de la familia GPT-5 el parámetro
-que manda es `reasoning_effort`, porque *"responder con RAG no es una tarea de razonamiento"*
-([Microsoft](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)).
+que manda es `reasoning_effort` — un ingeniero que corrió
+[la evaluación de RAG de Microsoft](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)
+observó que con `minimal` el modelo nunca gastó tokens de razonamiento y aun así dio respuestas de
+calidad, y plantea que responder con RAG quizá no sea una tarea de razonamiento. **Él mismo dice que
+no probó la alternativa**, así que es una pista, no un hallazgo — que es exactamente como se debió
+citar la primera vez. *(Ver la [auditoría de fuentes](evaluacion/investigacion-chunking.md#source-audit--what-survived-verification-and-what-didnt).)*
 
 **"Escribir un preprocesador que extraiga el § de cada fragmento."**
 Dos horas de parseo que sobraron por una pregunta que nadie había hecho: *¿de dónde salió este PDF?*
@@ -232,10 +236,12 @@ autorizar media tarde de trabajo, no.
 
 Van escritos porque un resultado sin sus límites no es un resultado.
 
-- **20 preguntas, así que el puntaje absoluto carga ±18 puntos.** La guía de los practicantes sitúa
-  un golden dataset inicial en [50–100](https://qdrant.tech/blog/rag-evaluation-guide/) — y ni
-  siquiera 50 lo baja de ±12. La comparación pareada es el resultado; el porcentaje es un orden de
-  magnitud.
+- **20 preguntas, así que el puntaje absoluto carga ±18 puntos.** Ninguna guía que encontré pone el
+  piso por debajo de 50: [QASkills](https://qaskills.sh/blog/golden-dataset-llm-evaluation-guide)
+  dice 50–100 como mínimo viable, [Braintrust](https://www.braintrust.dev/articles/what-is-rag-evaluation)
+  50–200, y [Microsoft](https://medium.com/data-science-at-microsoft/the-path-to-a-golden-dataset-or-how-to-evaluate-your-rag-045e23d1f13f)
+  *"certainly not less than 100"*. Ni siquiera 50 baja el margen de ±12. La comparación pareada es
+  el resultado; el porcentaje es un orden de magnitud.
 - **Una sola ejecución por pregunta.** La P14 demostró que el modelo da respuestas distintas ante
   entradas idénticas.
 - **653 fragmentos.** Pedir 20 es el 3% de este corpus; contra 100.000 sería el 0.02%. **El arreglo

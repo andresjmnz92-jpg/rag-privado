@@ -1,60 +1,63 @@
-# Descarga las partes 160, 162 y 164 del titulo 45 (HIPAA) desde la API del eCFR
-# y escribe un archivo Markdown por seccion.
+# Pulls parts 160, 162 and 164 of Title 45 (HIPAA) from the eCFR API and writes
+# one Markdown file per section.
 #
-# La API entrega cada seccion como un <DIV8 TYPE="SECTION"> con su numero y su
-# cita oficial. Por eso no hace falta partir el texto a ciegas: la fuente ya
-# viene partida. Sin llave de API.
+# The API hands back each section as its own <DIV8 TYPE="SECTION">, with its
+# number and official citation as attributes. So there is nothing to split by
+# hand here: the source arrives already split. No API key needed.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$destino = Join-Path $PSScriptRoot 'secciones'
-New-Item -ItemType Directory -Force -Path $destino | Out-Null
+$outDir = Join-Path $PSScriptRoot 'secciones'
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-# La fecha de vigencia la dice la propia API, para que el corpus no envejezca en duro.
-$titulos = Invoke-RestMethod 'https://www.ecfr.gov/api/versioner/v1/titles.json'
-$fecha = ($titulos.titles | Where-Object { $_.number -eq 45 }).up_to_date_as_of
-Write-Output "Titulo 45 vigente al $fecha"
+# The effective date comes from the API, not from a date written in here. A
+# corpus that hardcodes its own currency goes stale without telling you.
+$titles = Invoke-RestMethod 'https://www.ecfr.gov/api/versioner/v1/titles.json'
+$asOf = ($titles.titles | Where-Object { $_.number -eq 45 }).up_to_date_as_of
+Write-Output "Title 45 current as of $asOf"
 
-$total = 0
-$vacias = @()
+$written = 0
+$empty = @()
 
-foreach ($parte in 160, 162, 164) {
-  $url = "https://www.ecfr.gov/api/versioner/v1/full/$fecha/title-45.xml?part=$parte"
+foreach ($part in 160, 162, 164) {
+  $url = "https://www.ecfr.gov/api/versioner/v1/full/$asOf/title-45.xml?part=$part"
   $xml = [xml](Invoke-WebRequest -Uri $url -UseBasicParsing).Content
 
-  foreach ($sec in $xml.SelectNodes("//DIV8[@TYPE='SECTION']")) {
-    $n = $sec.GetAttribute('N')
-    $encabezado = $sec.SelectSingleNode('HEAD').InnerText.Trim()
-    # Las cursivas del XML (<I> y <E T="04">) marcan el titulo de cada inciso
-    # -- "Standard", "General rule", "Elements". No son adorno: son la senal de
-    # donde empieza cada unidad, y sirven para partir las secciones largas.
-    $cuerpo = ($sec.SelectNodes('.//P') | ForEach-Object {
-      $t = $_.InnerXml -replace '</?I>', '*' -replace '<E[^>]*>', '*' -replace '</E>', '*'
-      [System.Net.WebUtility]::HtmlDecode($t).Trim()
+  foreach ($section in $xml.SelectNodes("//DIV8[@TYPE='SECTION']")) {
+    $number = $section.GetAttribute('N')
+    $heading = $section.SelectSingleNode('HEAD').InnerText.Trim()
+
+    # The italics in the XML (<I> and <E T="04">) mark the title of each
+    # paragraph -- "Standard", "General rule", "Elements". They are not
+    # decoration: they are the signal for where one unit ends and the next
+    # begins, which is what makes the long sections splittable later.
+    $body = ($section.SelectNodes('.//P') | ForEach-Object {
+      $text = $_.InnerXml -replace '</?I>', '*' -replace '<E[^>]*>', '*' -replace '</E>', '*'
+      [System.Net.WebUtility]::HtmlDecode($text).Trim()
     }) -join "`r`n`r`n"
 
-    if ([string]::IsNullOrWhiteSpace($cuerpo)) { $vacias += $n }
+    if ([string]::IsNullOrWhiteSpace($body)) { $empty += $number }
 
     $md = @"
 ---
-section: "$n"
-citation: "45 CFR $n"
-source: "https://www.ecfr.gov/current/title-45/section-$n"
-title: "$($encabezado -replace '"', "'")"
-retrieved: $fecha
+section: "$number"
+citation: "45 CFR $number"
+source: "https://www.ecfr.gov/current/title-45/section-$number"
+title: "$($heading -replace '"', "'")"
+retrieved: $asOf
 ---
 
-## $encabezado
+## $heading
 
-$cuerpo
+$body
 "@
-    $md | Out-File -FilePath (Join-Path $destino "$n.md") -Encoding utf8
-    $total++
+    $md | Out-File -FilePath (Join-Path $outDir "$number.md") -Encoding utf8
+    $written++
   }
 }
 
-Write-Output "$total secciones escritas en $destino"
-if ($vacias.Count -gt 0) {
-  Write-Output "Sin texto (reservadas o solo tablas): $($vacias -join ', ')"
+Write-Output "$written sections written to $outDir"
+if ($empty.Count -gt 0) {
+  Write-Output "No text (reserved sections, or tables only): $($empty -join ', ')"
 }

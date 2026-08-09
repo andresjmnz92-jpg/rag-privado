@@ -202,8 +202,12 @@ finds chunk size *"correlates weakly with in-corpus effectiveness"*. Size is not
 
 **"Cap `maxTokens` to control latency."**
 `maxTokens` truncates the output; it treats the symptom. For GPT-5-class models the parameter that
-matters is `reasoning_effort`, because *"RAG answering is a non-reasoning task"*
-([Microsoft](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)).
+matters is `reasoning_effort` — an engineer running
+[Microsoft's own RAG evaluation](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)
+found `minimal` never spent reasoning tokens and still produced high-quality answers, and suggests
+RAG answering may simply be a non-reasoning task. **He says outright that he did not test the
+alternative**, so this is a lead, not a finding — which is exactly how it should have been cited the
+first time. *(See the [source audit](evaluacion/investigacion-chunking.md#source-audit--what-survived-verification-and-what-didnt).)*
 
 **"Write a preprocessor to extract the § from each chunk."**
 Two hours of parsing, made unnecessary by one question nobody had asked: *where did this PDF come
@@ -228,9 +232,12 @@ authorizing an afternoon of work is not.
 
 Stated because a result without its limits isn't a result.
 
-- **20 questions, so the absolute score carries ±18 points.** Practitioner guidance puts a starting
-  golden dataset at [50–100](https://qdrant.tech/blog/rag-evaluation-guide/) — and even 50 only
-  narrows it to ±12. The paired comparison is the result; the percentage is an order of magnitude.
+- **20 questions, so the absolute score carries ±18 points.** No practitioner guide I found puts
+  the floor below 50 — [QASkills](https://qaskills.sh/blog/golden-dataset-llm-evaluation-guide) says
+  50–100 as minimum viable, [Braintrust](https://www.braintrust.dev/articles/what-is-rag-evaluation)
+  50–200, and [Microsoft](https://medium.com/data-science-at-microsoft/the-path-to-a-golden-dataset-or-how-to-evaluate-your-rag-045e23d1f13f)
+  *"certainly not less than 100"*. Even 50 only narrows the margin to ±12. The paired comparison is
+  the result; the percentage is an order of magnitude.
 - **One run per question.** Q14 proved the model gives different answers to identical inputs.
 - **653 chunks.** Asking for 20 is 3% of this corpus; against 100,000 it would be 0.02%. **The
   `topK` fix does not scale.**

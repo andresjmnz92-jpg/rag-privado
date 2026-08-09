@@ -1,44 +1,46 @@
-# Manda al RAG las secciones descargadas, una por llamada.
+# Sends the downloaded sections to the RAG, one per call.
 #
-# El webhook responde cuando TERMINA de indexar, no al recibir. Por eso el bucle
-# es secuencial de verdad: nunca hay dos secciones vectorizandose a la vez, y el
-# ritmo lo marca el servidor. Ollama corre en CPU sin GPU, y al lado hay
-# workflows de un cliente en produccion.
+# The webhook answers when it has FINISHED indexing, not when it receives. That
+# is what makes this loop genuinely sequential: two sections are never being
+# vectorised at once, and the server sets the pace instead of the script. Ollama
+# runs on CPU with no GPU here, and a client's workflows are in production
+# alongside it.
 #
-# Ni el token ni la URL van escritos aqui: este archivo se publica, y una URL de
-# webhook publicada es superficie regalada aunque exija token. Antes de correr:
-#   $env:RAG_N8N   = "https://tu-n8n.ejemplo.com"
-#   $env:RAG_TOKEN = "<el valor de la credencial RAG Carga>"
+# Neither the token nor the URL is written in this file, because this file gets
+# published — and a published webhook URL is free attack surface even when it
+# demands a token. Set both before running:
+#   $env:RAG_N8N   = "https://your-n8n.example.com"
+#   $env:RAG_TOKEN = "<the header-auth token you created in n8n>"
 
 $ErrorActionPreference = 'Stop'
 
-if (-not $env:RAG_N8N)   { throw 'Falta $env:RAG_N8N con la URL base de tu n8n.' }
-if (-not $env:RAG_TOKEN) { throw 'Falta $env:RAG_TOKEN. Ponlo antes de correr este script.' }
+if (-not $env:RAG_N8N)   { throw 'Missing $env:RAG_N8N with the base URL of your n8n.' }
+if (-not $env:RAG_TOKEN) { throw 'Missing $env:RAG_TOKEN. Set it before running this script.' }
 
 $url = "$($env:RAG_N8N.TrimEnd('/'))/webhook/rag-cargar-seccion"
-$cabeceras = @{ 'X-Carga-Token' = $env:RAG_TOKEN }
-$archivos = Get-ChildItem (Join-Path $PSScriptRoot 'secciones') -Filter *.md | Sort-Object Name
+$headers = @{ 'X-Carga-Token' = $env:RAG_TOKEN }
+$files = Get-ChildItem (Join-Path $PSScriptRoot 'secciones') -Filter *.md | Sort-Object Name
 
-Write-Output "$($archivos.Count) secciones por cargar"
-$inicio = Get-Date
+Write-Output "$($files.Count) sections to load"
+$started = Get-Date
 $ok = 0
-$fallos = @()
+$failures = @()
 $i = 0
 
-foreach ($a in $archivos) {
+foreach ($file in $files) {
   $i++
-  $crudo = Get-Content $a.FullName -Raw -Encoding UTF8
+  $raw = Get-Content $file.FullName -Raw -Encoding UTF8
 
-  if ($crudo -notmatch '(?s)^---\r?\n(.*?)\r?\n---\r?\n(.*)$') {
-    $fallos += "$($a.BaseName): sin frontmatter"
+  if ($raw -notmatch '(?s)^---\r?\n(.*?)\r?\n---\r?\n(.*)$') {
+    $failures += "$($file.BaseName): no frontmatter"
     continue
   }
   $frontmatter = $Matches[1]
-  $cuerpo = $Matches[2].Trim()
+  $body = $Matches[2].Trim()
 
   $meta = @{}
-  foreach ($linea in ($frontmatter -split "`r?`n")) {
-    if ($linea -match '^(\w+):\s*"?(.*?)"?\s*$') { $meta[$Matches[1]] = $Matches[2] }
+  foreach ($line in ($frontmatter -split "`r?`n")) {
+    if ($line -match '^(\w+):\s*"?(.*?)"?\s*$') { $meta[$Matches[1]] = $Matches[2] }
   }
 
   $json = @{
@@ -46,29 +48,29 @@ foreach ($a in $archivos) {
     citation  = $meta['citation']
     source    = $meta['source']
     retrieved = $meta['retrieved']
-    texto     = $cuerpo
+    texto     = $body
   } | ConvertTo-Json -Depth 3
 
-  # PowerShell 5.1 manda el cuerpo en ISO-8859-1 si se le pasa como texto, y el
-  # simbolo § llegaria corrupto. Se manda como bytes UTF-8 explicitos.
+  # PowerShell 5.1 sends the body as ISO-8859-1 when handed a string, and the
+  # section sign would arrive mangled. Sent as explicit UTF-8 bytes instead.
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
 
   try {
-    Invoke-RestMethod -Uri $url -Method Post -Body $bytes -Headers $cabeceras `
+    Invoke-RestMethod -Uri $url -Method Post -Body $bytes -Headers $headers `
       -ContentType 'application/json; charset=utf-8' -TimeoutSec 600 | Out-Null
     $ok++
-    Write-Output ("[{0,3}/{1}] {2}  ok" -f $i, $archivos.Count, $a.BaseName)
+    Write-Output ("[{0,3}/{1}] {2}  ok" -f $i, $files.Count, $file.BaseName)
   }
   catch {
-    $fallos += "$($a.BaseName): $($_.Exception.Message)"
-    Write-Output ("[{0,3}/{1}] {2}  FALLO" -f $i, $archivos.Count, $a.BaseName)
+    $failures += "$($file.BaseName): $($_.Exception.Message)"
+    Write-Output ("[{0,3}/{1}] {2}  FAILED" -f $i, $files.Count, $file.BaseName)
   }
 }
 
-$minutos = [math]::Round(((Get-Date) - $inicio).TotalMinutes, 1)
+$minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
 Write-Output ""
-Write-Output "Cargadas $ok de $($archivos.Count) en $minutos minutos"
-if ($fallos.Count -gt 0) {
-  Write-Output "Fallaron $($fallos.Count):"
-  $fallos | ForEach-Object { Write-Output "  $_" }
+Write-Output "Loaded $ok of $($files.Count) in $minutes minutes"
+if ($failures.Count -gt 0) {
+  Write-Output "$($failures.Count) failed:"
+  $failures | ForEach-Object { Write-Output "  $_" }
 }

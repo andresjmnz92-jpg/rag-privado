@@ -1,212 +1,281 @@
-# Cómo resuelven esto los que lo hacen en producción
+# How people who do this in production actually solve it
 
-*Investigación del 8 de agosto de 2026 · 14 fuentes · Confianza: alta en las cifras de Anthropic
-y el paper de taxonomía; media en las cifras de corpus legales (una sola fuente)*
+*Research, 8 August 2026 · **Every quotation re-verified against its source page on 9 August 2026**
+— see the source audit at the end, including the six claims that did not survive it.*
 
-## Resumen
+## Short version
 
-La respuesta corta a la pregunta que originó esto: **subir el `chunkSize` es el parche.** La
-evidencia dice que el tamaño del fragmento importa poco comparado con **dónde se corta**. Para un
-documento como HIPAA —numerado, jerárquico, con listas explícitas— la corrección que usan los
-equipos serios es **cortar por la estructura del propio documento y recuperar el padre completo**,
-no agrandar la ventana.
+The question that started this was whether to raise `chunkSize` from 1000 to 2000. **Raising it is
+the patch.** Fragment size matters much less than **where you cut**. For a document like HIPAA —
+numbered, hierarchical, full of explicit lists — what production teams do is **cut along the
+document's own structure and return the whole parent**, not widen the window.
 
-Y hay un ajuste de un solo campo que se puede probar **hoy, sin reindexar nada**: subir `topK`
-de 5 a 20.
-
----
-
-## 1. El tamaño del fragmento no es la variable que manda
-
-El hallazgo más directo contra "súbelo a 2000" viene del estudio más completo publicado sobre el
-tema, que compara segmentación por estructura, semántica y guiada por LLM
-([Zhou, Wang, Koopman & Zuccon, 2026](https://arxiv.org/abs/2602.16974)):
-
-> *"Chunk size correlates **moderately** with in-document but **weakly** with in-corpus
-> effectiveness"* — el método de segmentación importa más allá de las dimensiones del fragmento.
-
-Y sobre qué método gana:
-
-> *"Simple structure-based methods **outperform LLM-guided alternatives** for in-corpus retrieval."*
-
-Traducido: cortar por los títulos y secciones del documento le gana a métodos mucho más caros y
-sofisticados. No hace falta un LLM decidiendo dónde cortar — hace falta respetar la estructura que
-el autor ya puso.
-
-**El consenso de los practicantes coincide** ([Unstructured](https://unstructured.io/blog/chunking-for-rag-best-practices),
-[Towards Data Science](https://towardsdatascience.com/rag-101-chunking-strategies-fdc6f6c2aaec/)):
-
-> *"Los documentos reales ya tienen fronteras semánticas —encabezados, secciones, elementos de
-> lista— y cortar por ellas le gana a cualquier ventana fija, porque el autor ya agrupó las ideas
-> relacionadas."*
-
-> *"La mayoría de los fallos de RAG son fallos de recuperación, y la mayoría de los fallos de
-> recuperación empiezan en el chunking."*
-
-**Aplicado a nuestro caso:** el § 164.404(c) tiene sus cinco elementos (A)–(E) escritos como una
-unidad. Cortar cada 1000 caracteres los partió; cortar cada 2000 podría partirlos igual, solo que
-en otro sitio. El problema no es la longitud de la tijera, es dónde se apoya.
+And there is a one-field change worth trying **today, with no reindexing**: raise `topK` from 5
+to 20.
 
 ---
 
-## 2. Lo que se usa de verdad para textos legales: parent-document retrieval
+## 1. Fragment size is not the variable in charge
 
-Es la técnica que más aparece cuando la búsqueda se restringe a documentos legales y de
-referencia.
+The most direct evidence against "just make it 2000" comes from the most thorough study published
+on the subject, comparing structure-based, semantic and LLM-guided segmentation —
+*Beyond Chunk-Then-Embed: A Comprehensive Taxonomy and Evaluation of Document Chunking Strategies
+for Information Retrieval*, by Yongjie Zhou, Shuai Wang, Bevan Koopman and Guido Zuccon
+([arXiv:2602.16974](https://arxiv.org/abs/2602.16974)):
 
-**Cómo funciona** ([ZeroEntropy](https://zeroentropy.dev/concepts/parent-document-retrieval/)):
-se indexan fragmentos **pequeños** (50–200 tokens) para que la búsqueda sea precisa, pero al
-LLM se le entrega el fragmento **padre** completo (500–1500 tokens o la sección entera). Separa la
-unidad de búsqueda de la unidad de lectura.
+> *"chunk size correlates **moderately** with in-document but **weakly** with in-corpus
+> effectiveness"*
 
-> *"Para prosa larga, documentación técnica y texto legal, parent-document retrieval es **casi
-> siempre una ganancia neta**."*
+And on which method wins:
 
-**Por qué resuelve exactamente nuestro fallo** ([Edtek](https://edtek.ai/kb/chunking-strategies-legal-reference-documents/)),
-que describe nuestro problema casi con las mismas palabras:
+> *"simple structure-based methods **outperform LLM-guided alternatives** for in-corpus retrieval"*
 
-> *"La subsección (a)(2)(iv) de un estatuto define un término usado en la subsección (a)(2)(v). El
-> chunking fijo las va a partir a mitad de definición."*
+Cutting along the document's own headings and sections beats methods that are far more expensive.
+You don't need an LLM deciding where to cut — you need to respect the structure the author already
+put there.
 
-Su receta para documentos jerárquicos: **partir primero por los marcadores estructurales del
-documento** —encabezados, saltos de sección, fronteras de párrafo— y luego recuperar el padre.
+[Unstructured](https://unstructured.io/blog/chunking-for-rag-best-practices) makes the same point
+from the practitioner side, describing what smart chunking does differently:
 
-**El dato medido**, de un corpus de contratos: usar chunking por sección en vez de tamaño fijo da
-**entre 8 y 15 puntos de mejora en recall@k**. *(Una sola fuente, sin paper detrás — tratar como
-orden de magnitud, no como cifra exacta.)*
+> *"Documents often contain a variety of elements, such as paragraphs, section headers, footers,
+> lists, tables, and more, all of which contribute to their overall organization."*
 
-**Lo que cuesta:** casi nada. El índice pesa lo mismo porque solo se embeben los hijos; recuperar
-el padre es una consulta por ID. No hay coste extra de embeddings ni de LLM.
+Their approach *"leverages the document element types identified during partitioning to understand
+the document structure, and preserves section boundaries."*
+
+**Applied to our case:** § 164.404(c) has its five elements (A)–(E) written as one unit. Cutting
+every 1000 characters split them; cutting every 2000 could split them just as easily, somewhere
+else. The problem isn't the length of the scissors, it's where they land.
 
 ---
 
-## 3. Contextual Retrieval (Anthropic): más caro, mejor medido
+## 2. What is actually used for legal text: parent-document retrieval
 
-Es la técnica con los números más sólidos, porque los publicó quien la inventó
-([Anthropic Engineering](https://www.anthropic.com/engineering/contextual-retrieval)). Consiste en
-que un LLM escriba 50–100 tokens de contexto para **cada fragmento** antes de indexarlo.
+This is the technique that keeps coming up once the search narrows to legal and reference
+documents.
 
-Tasa de fallo de recuperación (1 − recall@20):
+**How it works** ([ZeroEntropy](https://zeroentropy.dev/concepts/parent-document-retrieval/)):
+index small fragments so search stays precise, but hand the LLM the complete parent. It separates
+the unit of search from the unit of reading.
 
-| Configuración | Fallo | Mejora |
+> *"For long-form prose, technical documentation, and legal text, parent-document retrieval is
+> almost always a net win."*
+
+Their recommended shape, verbatim:
+
+> *"A common shape is 200-token chunks under 1500-2000-token parents — small enough that
+> embeddings stay focused, large enough that the LLM gets the surrounding context."*
+
+**Why it maps onto our failure exactly.** [Edtek](https://edtek.ai/kb/chunking-strategies-legal-reference-documents/)
+describes our problem in one sentence:
+
+> *"A statute's subsection (a)(2)(iv) defines a term used in subsection (a)(2)(v). Fixed chunking
+> will split them mid-definition."*
+
+Their recipe for hierarchical documents:
+
+> *"Split on the document's own structural markers first — headings, section breaks, paragraph
+> boundaries — and only fall back to fixed-size splits when no structural marker is available
+> within the target chunk length."*
+
+They rate parent-document retrieval as **"High"** precision against recursive chunking's
+**"Medium-High"** — a qualitative ranking, not a measured one. **There is no benchmark number
+here**, and the earlier version of this document claimed one. See the audit.
+
+**What it costs:** almost nothing. The index is the same size because only the children are
+embedded; retrieving the parent is a lookup by ID.
+
+---
+
+## 3. Contextual Retrieval (Anthropic): the best-measured option
+
+This has the most solid numbers, because they were published by whoever invented the technique
+([Anthropic Engineering](https://www.anthropic.com/engineering/contextual-retrieval)). An LLM
+writes 50–100 tokens of context for each fragment before indexing.
+
+Top-20-chunk retrieval failure rate:
+
+| Configuration | Failure | Anthropic's wording |
 |---|---|---|
-| Embeddings base | 5.7% | — |
-| + Contextual Embeddings | 3.7% | −35% |
-| + Contextual BM25 | 2.9% | −49% |
-| + Reranking | **1.9%** | **−67%** |
+| Base embeddings | 5.7% | — |
+| + Contextual Embeddings | 3.7% | *"reduced the top-20-chunk retrieval failure rate by 35%"* |
+| + Contextual BM25 | 2.9% | *"reduced the top-20-chunk retrieval failure rate by 49%"* |
+| + Reranking | **1.9%** | *"reduces the top-20-chunk retrieval failure rate by 67%"* |
 
-**Coste:** *"$1.02 por millón de tokens de documento"*, una sola vez, con prompt caching. Para
-nuestros 577 fragmentos serían centavos — pero exige reindexar pasando cada fragmento por un LLM.
+**Cost:** *"$1.02 per million document tokens"*, once, using prompt caching. For our 577 fragments
+that's cents — but it requires reindexing every fragment through an LLM.
 
-**El dato que podemos usar hoy sin reindexar nada:**
+**The number we can use today without reindexing anything:**
 
-> *"Pasar los **top-20** fragmentos al modelo es más efectivo que solo los top-10 o top-5."*
+> *"Passing the top-20 chunks to the model is more effective than just the top-10 or top-5."*
 
-Nuestro `topK` está en **5**. Ese es un campo, no una reindexación.
-
----
-
-## 4. Late chunking: mucho ruido, poca ganancia
-
-Aparece mucho en blogs, así que vale medirlo. Los benchmarks de quien la propuso
-([Jina AI](https://jina.ai/news/late-chunking-in-long-context-embedding-models/),
-[Weaviate](https://weaviate.io/blog/late-chunking)) dan:
-
-> *"Promediando tres modelos y cuatro conjuntos de datos, late chunking logró una mejora relativa
-> del **3.63%** (1.9% absoluto)."*
-
-Y el paper de taxonomía añade una advertencia importante: *"el chunking contextualizado mejoró la
-recuperación en corpus pero **degradó** los resultados dentro del documento"*. Nuestro caso
-—encontrar un inciso dentro de un reglamento— es precisamente el que se degrada.
-
-**Conclusión: no aplica a nuestro problema.** Un 3.6% no arregla siete listas cortadas.
+Ours is at **5**. That's one field, not a reindex.
 
 ---
 
-## 5. Cómo evalúan los equipos serios
+## 4. Late chunking: promising, and barely measured
 
-Nuestra evaluación de 20 preguntas está **por debajo** del estándar, pero no lejos.
+It shows up constantly in blog posts, so it's worth checking what the evidence actually is.
 
-| Referencia | Tamaño recomendado |
+[Jina AI](https://jina.ai/news/late-chunking-in-long-context-embedding-models/), who proposed it,
+publishes per-dataset nDCG@10 comparisons — naive versus late chunking:
+
+| SciFact | 64.20% → 66.10% |
+| NFCorpus | 23.46% → 29.98% |
+
+Their summary claim is qualitative: *"In all cases, late chunking improved the scores compared to
+the naive approach."* **They publish no averaged figure across models and datasets.**
+
+[Weaviate](https://weaviate.io/blog/late-chunking) is blunter about the state of the evidence:
+
+> *"late chunking is a new approach and as such there is limited data available on its performance
+> in benchmarks"*
+
+What they do report is a trend rather than a number: *"the relative uplift in performance from late
+chunking was also shown to improve as the document length in characters increased."*
+
+**Conclusion: not enough measured evidence to justify reindexing for it.** The gains reported are
+real but per-dataset and uneven — 1.9 points on one, 6.5 on another — and the technique's own
+advocates say the benchmark data is thin.
+
+---
+
+## 5. How serious teams evaluate
+
+Our 20-question evaluation is below the standard. How far below depends on who you ask, and the
+sources disagree enough that it's worth showing the spread rather than picking one:
+
+| Source | Recommended size |
 |---|---|
-| Golden dataset para empezar ([Qdrant](https://qdrant.tech/blog/rag-evaluation-guide/)) | **50–100 preguntas** con documento fuente y respuesta ideal |
-| ARES (calibración automática) | ~150 muestras anotadas por humanos |
-| Producción típica | 300 automáticas + 60 golden |
+| [QASkills](https://qaskills.sh/blog/golden-dataset-llm-evaluation-guide) | 50–100 examples as minimum viable, *"to catch obvious failures"* |
+| [Braintrust](https://www.braintrust.dev/articles/what-is-rag-evaluation) | at least 50–200 for meaningful evaluation |
+| [Microsoft Data Science](https://medium.com/data-science-at-microsoft/the-path-to-a-golden-dataset-or-how-to-evaluate-your-rag-045e23d1f13f) | ~150 question/answer pairs, *"but certainly not less than 100"* |
 
-**Métricas estándar** ([DeepEval](https://deepeval.com/guides/guides-rag-evaluation),
+Nobody puts the floor below 50. We are at 20.
+
+**Standard metrics** ([DeepEval](https://deepeval.com/guides/guides-rag-evaluation),
 [Patronus](https://www.patronus.ai/llm-testing/rag-evaluation-metrics)):
 
-- **Recuperación:** precision@k, recall@k, MRR, nDCG
-- **Generación:** faithfulness, relevancia, cobertura de citas, tasa de alucinación
+- **Retrieval:** precision@k, recall@k, MRR, nDCG
+- **Generation:** faithfulness, relevance, citation coverage, hallucination rate
 
-**Lo que ya hacemos bien:** nuestras respuestas correctas salen del documento, no del modelo. Eso
-es un golden dataset de verdad, y es la parte cara — *"los golden datasets con respuestas
-verificadas a mano son costosos, lentos y subjetivos"* (Qdrant). Las nuestras están verificadas a
-mano contra el PDF.
+**What we already do right:** our correct answers come from the source document, not from a model.
+That is the expensive half of a golden dataset, and it's done.
 
-**Lo que falta:** llegar a 50 preguntas, y separar la métrica de recuperación de la de generación.
-Hoy medimos la respuesta final; no medimos si el fragmento correcto llegó a estar entre los
-recuperados. Son dos fallos distintos con dos arreglos distintos.
+**What's missing:** getting past 50 questions, and separating the retrieval metric from the
+generation one. Today we grade the final answer; we don't record whether the correct fragment even
+reached the context.
 
-**Y algo que hicimos sin saber que era estándar:** las 4 preguntas de control miden *hallucination
-rate*, que está en todas las listas de métricas de producción. Nuestro resultado ahí fue 0.
+**And something we did without knowing it was standard:** the 4 control questions measure
+hallucination rate, which appears on every production metric list. Our result there was 0.
 
 ---
 
-## 6. Lo que exige el sector salud, más allá del chunking
+## 6. What healthcare demands beyond chunking
 
-Para lo que Andrés quiere vender, esto importa tanto como el recall
-([InformationWeek](https://www.informationweek.com/data-management/nobody-told-legal-about-your-rag-pipeline-why-that-s-a-problem)):
+For what this is meant to sell, this matters as much as recall. Suresh Srinivas, of Collate, quoted
+in [InformationWeek](https://www.informationweek.com/data-management/nobody-told-legal-about-your-rag-pipeline-why-that-s-a-problem):
 
-> *"En las bases de datos de RAG los datos se fragmentan, pero los metadatos de procedencia,
-> propiedad y clasificación rara vez viajan con ellos."*
+> *"In a RAG database, data gets chunked — whether that's documents, database query results or
+> structured data exports — and the metadata that establishes provenance, ownership and
+> classification rarely travels with it."*
 
-Prácticas concretas que citan para salud y finanzas:
+The article's own prescriptions are about governance rather than implementation: embedding *"audit
+readiness checks into the AI development lifecycle"*, and preserving *"the source corpus, document
+versions, retrieval results, timestamps, model prompts, and human review steps."*
 
-- **El ID del fragmento debe ser la ruta de la sección**, no un hash — para poder citar `§ 164.404(c)(1)(A)` y que sea verificable
-- Referencias cruzadas guardadas como metadatos
-- Registro de auditoría de las decisiones de recuperación
-- Citas explicables en cada respuesta
-- Versionado del corpus (qué versión del reglamento respondió)
-
-Ese último punto ya lo tenemos documentado: nuestro corpus es de marzo de 2013 y lo dijimos.
+That last list is the one that matters here, and **corpus versioning is the part we already
+do** — the `retrieved` date travels with every fragment.
 
 ---
 
-## Recomendación
+## Recommendation
 
-**Una sola, con su trade-off:** hacer **chunking por estructura del § + parent-document
-retrieval**, no subir el `chunkSize`.
+**One, with its trade-off: chunk by the structure of the § and use parent-document retrieval.** Do
+not raise `chunkSize`.
 
-HIPAA viene numerado (`§ 164.404`, `(c)`, `(1)`, `(A)`). Es el caso ideal para cortar por
-estructura, y es donde la evidencia da 8–15 puntos de recall. Parent-document además es barato:
-mismo índice, una consulta por ID.
+HIPAA arrives numbered (`§ 164.404`, `(c)`, `(1)`, `(A)`). It is the ideal case for structural
+cutting.
 
-**El trade-off:** cortar por estructura exige parsear la numeración del PDF, y el propio Edtek
-advierte que *"la estructura tiene que ser legible; los PDFs varían muchísimo en qué tan limpiamente
-se recupera su organización"*. Es más trabajo que cambiar un número, y puede fallar si el texto
-extraído viene sucio. Subir el `chunkSize` es un campo; esto es un preprocesador.
+**The trade-off:** cutting by structure means parsing the PDF's numbering, and Edtek warns exactly
+about that:
 
-**Antes de eso, el experimento de un minuto:** subir `topK` de 5 a 20 y repetir las 7 preguntas
-incompletas. Anthropic midió que top-20 supera a top-5, y si los pedazos faltantes de las listas
-están en las posiciones 6–20, aparecen sin reindexar nada. **Si funciona, sabemos que el problema
-es de ranking y no de corte** — y eso cambia cuál de las dos correcciones hace falta.
+> *"For PDFs of legal and scholarly content, the catch is that the structure has to actually be
+> readable. PDFs vary wildly in how cleanly text extraction recovers the document's organisation."*
 
-Ese orden —el experimento barato antes de la obra grande— es el que separa medir de suponer.
+That's more work than changing a number, and it can fail if the extracted text comes out dirty.
+
+**Before any of that, the one-minute experiment:** raise `topK` from 5 to 20 and re-run the seven
+incomplete questions. Anthropic measured that top-20 beats top-5, and if the missing pieces are
+sitting at ranks 6–20, they appear with no reindexing at all. **If it works, the problem is ranking
+and not cutting** — and that changes which of the two fixes we need.
+
+Edtek puts the same idea better than I can:
+
+> *"The strategy you pick is less important than the strategy you calibrate."*
 
 ---
 
-## Metodología y límites
+## Source audit — what survived verification and what didn't
 
-14 fuentes consultadas, 3 leídas completas. Sub-preguntas: estrategias de chunking para documentos
-jerárquicos; evidencia medida de cada una; estándares de evaluación de RAG; si subir `chunkSize`
-es corrección o parche; prácticas específicas del sector legal.
+Every quotation above was re-fetched from its page on 9 August 2026 and checked word by word.
+**Six claims from the first version of this document did not survive**, and they are listed here
+rather than quietly deleted.
 
-**Lo que no encontré:**
+### Removed: attributed to a source that doesn't say it
 
-- **Ningún caso publicado de RAG sobre HIPAA con métricas.** Las cifras de 8–15 puntos vienen de
-  corpus de contratos, no de reglamentos federales. Es analogía razonable, no evidencia directa.
-- **El paper de taxonomía solo se pudo leer en abstract** — el PDF no era extraíble. Las cifras
-  citadas son las del resumen de los autores, no de sus tablas.
-- **Las cifras de recall por sección tienen una sola fuente** y sin paper detrás. Tratarlas como
-  orden de magnitud.
+| Claim | Attributed to | What the page actually says |
+|---|---|---|
+| Golden dataset of **50–100 questions** | Qdrant | The page gives no starting size. *(The range is real — it's in QASkills, Braintrust and Microsoft, now cited above.)* |
+| Hand-verified golden datasets are *"costly, slow and subjective"* | Qdrant | Not present |
+| Late chunking gives **3.63% relative / 1.9% absolute** averaged over 3 models and 4 datasets | Jina AI | Only per-dataset figures. No average published |
+| **8–15 points of recall@k** from section-based chunking on a contract corpus | Edtek | No benchmark figure anywhere on the page |
+| *"Most RAG failures are retrieval failures, and most retrieval failures start at chunking"* | Unstructured | Not present |
+| Chunk ID should be the section path; cross-references as metadata; audit log of retrieval decisions | InformationWeek | Not present. Only the provenance quotation is real |
+
+### The subtlest one: a real quotation with its context removed
+
+**Microsoft, on `reasoning_effort` for RAG.** This was cited as
+*"RAG answering is a non-reasoning task"* — presented as a Microsoft finding.
+
+The sentence exists. Here it is with what came before and after
+([GPT-5: Will it RAG?](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)):
+
+> *"I have never seen it actually use any reasoning tokens when I set the effort to minimal, so
+> **maybe** that means that a higher reasoning effort is really only needed for longer or more
+> complex tasks, and RAG answering is a non-reasoning task. A higher reasoning effort would
+> definitely affect the latency and likely also affect the answer quality. **I did not test that
+> out**, since the 'minimal' effort setting already results in high quality answers."*
+
+It is a `maybe`, followed by an explicit `I did not test that out`. Quoting the middle of that
+turns one engineer's untested hypothesis into a measured conclusion from Microsoft.
+
+**This is the failure mode worth remembering**, because it survives the obvious check: the words
+are on the page, in that order. Searching for the sentence confirms it. Only reading the paragraph
+around it shows the claim was never made.
+
+**What the article does measure** is mean latency per model in its own RAG evaluation, and that is
+usable:
+
+| gpt-4.1-mini | 2.9 s |
+| gpt-5-chat | 2.9 s |
+| gpt-5-mini | **7.5 s** |
+| gpt-5 | 9.6 s |
+| o3-mini | 19.4 s |
+
+*Method note: this page returned only its title through a plain fetch. It was recovered with a
+different scraping tool. **A tool returning nothing is not evidence that nothing is there** — the
+first version of this audit had already written the claim off as unverifiable.*
+
+### What this changes about the conclusion
+
+**Nothing.** The four sources carrying the argument — Zhou et al. on chunk size, Anthropic on
+top-20, ZeroEntropy and Edtek on parent-document retrieval for legal text — **all verified
+verbatim**.
+
+What fell were the decorative claims. And that is the pattern worth keeping: **the six that failed
+are the most quotable ones.** *"Most RAG failures are retrieval failures"* is a perfect line for a
+report. It is also the one that doesn't exist. The ones that held up are the ones with ugly numbers
+attached — 5.7%, $1.02, 64.20 → 66.10.
+
+A round sentence with no number behind it is the one to check first.
