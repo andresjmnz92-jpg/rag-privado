@@ -7,12 +7,13 @@ para responder preguntas sobre documentos normativos **sin que los documentos sa
 máquina**.
 
 Lo que este repo quiere mostrar no es que funciona. Es que **medí qué tan bien funciona, encontré
-dónde se rompe, y puedo probar cuál de los arreglos valía la pena**.
+dónde se rompe, y puedo probar cuál de los arreglos valía la pena** — incluido el que hice mal.
 
 **Stack:** PostgreSQL 17 + pgvector · Ollama con BGE-M3 (local, solo CPU) · n8n ·
 `gpt-5-mini` para redactar
 **Servidor:** Hetzner CX33 — 4 vCPU, 8 GB de RAM, sin GPU · ~$9 al mes
-**Corpus:** HIPAA Administrative Simplification, 45 CFR partes 160, 162 y 164 — 115 páginas
+**Corpus:** HIPAA Administrative Simplification, 45 CFR partes 160, 162 y 164 — 148 secciones,
+bajadas de la API del eCFR, vigentes al 6 de agosto de 2026
 
 ---
 
@@ -33,10 +34,57 @@ documento en inglés. BGE-M3 es multilingüe, y la recuperación funcionó en lo
 
 ---
 
+## El hallazgo que cambió el proyecto
+
+La primera versión indexaba un **PDF**: 115 páginas, 577 fragmentos, cortados cada 1000
+caracteres. Siete de dieciséis respuestas salieron incompletas porque las listas numeradas quedaban
+partidas entre fragmentos.
+
+El diagnóstico obvio era "arreglar el chunking". **Era el diagnóstico equivocado.**
+
+La norma la publica el eCFR con una **API pública sin llave**, y devuelve cada sección como un
+`<DIV8 TYPE="SECTION">` con su número y su cita oficial como atributos. La estructura que iba a
+reconstruir con un regex **estaba en la fuente desde el principio**.
+
+```
+3 llamadas a la API  →  148 archivos Markdown, uno por sección  →  653 fragmentos,
+                        cada uno con su §, su cita oficial y su fecha de descarga
+```
+
+**El cuello de botella nunca fue la estrategia de chunking. Fue elegir mal el formato de entrada.**
+Un PDF es una foto del documento; el XML es el documento. Cada hora ajustando el tamaño del
+fragmento se fue en reconstruir una estructura que un `curl` entregaba intacta.
+
+De ahí cayeron dos cosas gratis:
+
+- **La procedencia viaja con cada fragmento.** Cada uno lleva `section`, `citation`, la URL de
+  `source` y la fecha `retrieved`. Eso es lo que hace una respuesta auditable en vez de solo
+  creíble.
+- **El corpus está al día.** El PDF tenía enmiendas hasta marzo de 2013. La API informa su propia
+  fecha de vigencia, así que el corpus no puede envejecer en silencio.
+
+### Y el corpus sí estaba viejo
+
+El eCFR también expone un **endpoint de versiones**. Al consultarlo por las 17 secciones que
+sostienen la evaluación devolvió **33 registros de enmienda, todos posteriores a la fecha del PDF**.
+
+La mayoría se agrupan en una sola fecha de 2016 y parecen una enmienda técnica. Tres no:
+`160.103`, `164.502` y `164.520` traen enmiendas de 2024 y 2026 — una de ellas de hace **poco más
+de dos meses**.
+
+Verificado a mano: los montos de las multas del § 160.404 y los cinco elementos de notificación del
+§ 164.404 están sin cambios, así que esas respuestas siguen valiendo. **El punto no es que las
+respuestas estuvieran mal. Es que no había forma de saberlo sin comprobarlo** — y una llamada de
+dos minutos reemplazó una tarde de re-verificación.
+
+Para un cliente eso no es una nota al pie, es el servicio: **sus documentos también envejecen.**
+
+---
+
 ## Resultados
 
-20 preguntas con la respuesta verificada a mano contra el PDF original — 16 con respuesta conocida,
-y **4 preguntas de control cuya respuesta correcta es que el sistema diga que no sabe**.
+20 preguntas con la respuesta verificada a mano contra la fuente — 16 con respuesta conocida, y
+**4 preguntas de control cuya respuesta correcta es que el sistema diga que no sabe**.
 
 | | topK = 5 | topK = 20 |
 |---|---|---|
@@ -48,11 +96,19 @@ y **4 preguntas de control cuya respuesta correcta es que el sistema diga que no
 | **Alucinaciones** | **0** | **0** |
 | **Puntaje estricto** | **11/20 — 55%** | **15/20 — 75%** |
 
+**Esto se lee como comparación pareada, no como calidad absoluta.** Con n=20, un porcentaje suelto
+carga unos ±19 puntos de error; lo que las mismas 20 preguntas en dos configuraciones **sí**
+sostienen es la dirección y el tamaño del cambio, porque las preguntas difíciles lo son en las dos
+rondas.
+
 **Latencia**, sobre 23 ejecuciones: mediana 16 s · promedio 18 s · peor caso completado 262 s · un
 timeout a los 604 s.
 
-**Indexación:** 577 fragmentos en 8 min 8 s, en 4 vCPU sin GPU — unas 14 páginas por minuto. Se
-paga una sola vez.
+**Indexación:** 653 fragmentos en unos 9 minutos, en 4 vCPU sin GPU. Se paga una sola vez.
+
+> **La medición del corpus reestructurado está en curso.** Las dos columnas de arriba son del
+> corpus en PDF. El tercer número no se publica hasta correr las mismas 20 preguntas contra el
+> corpus por secciones y calificarlas con la misma regla estricta.
 
 ---
 
@@ -65,27 +121,38 @@ un sistema que se calla es auditable; uno que improvisa es un riesgo legal.
 
 **Subir `topK` de 5 a 20 arregló cuatro respuestas y rompió una.** La pregunta 16 pasó de
 parcialmente correcta a *"No encontré eso"* — con veinte fragmentos en el contexto, la señal quedó
-enterrada en ruido. **El óptimo no está en ninguno de los dos extremos**, y eso solo aparece si
-uno vuelve a correr las preguntas que ya funcionaban.
+enterrada en ruido.
+
+Ese resultado tiene un nombre que encontré después: **"Lost in the Middle"**. Las guías de
+producción lo dicen sin rodeos: *no devuelvas más de 10 documentos sin reranking, o el modelo
+ignora lo que queda en el medio del contexto*. Subir el `topK` compró recall y lo pagó con
+precisión. **No fue un arreglo: fue un canje.**
 
 **Un error que ningún lector habría detectado.** A la pregunta de a partir de cuántos afectados hay
 que avisar a los medios, el sistema respondió *"a partir de 500"* mientras citaba el texto que él
 mismo había recuperado: *"more than 500 residents"*. Una brecha que afecte exactamente a 500
-personas **no** obliga a avisar a los medios. La recuperación fue correcta; el resumen, no. Ese
-tipo de error es invisible salvo que compares cada respuesta contra la fuente — que es justamente
-para lo que sirve la evaluación.
+personas **no** obliga a avisar a los medios. La recuperación fue correcta; el resumen, no.
 
 **Los fallos de recuperación y los de generación se arreglan al revés.** La pregunta 14 falló
 porque los fragmentos con la respuesta nunca llegaron al modelo. La 2 falló con el texto correcto
 delante. El chunking arregla la primera; el prompt arregla la segunda. Mirando solo la respuesta
 final, las dos se ven igual de "incompletas".
 
+**Y ahora se pueden distinguir.** Leyendo el paso de recuperación de una sola ejecución sobre el
+corpus reestructurado, la pregunta 14 recuperó los elementos (A)–(D) en el puesto 1 y el (E) en el
+15 — pero la respuesta también incluyó un requisito del **§ 164.410**, que es otra obligación y de
+otra parte. La recuperación hizo su trabajo; el redactor mezcló dos secciones.
+
+**Ese error antes era invisible.** En el corpus en PDF todos los fragmentos citaban el mismo título
+de documento. Ahora la cita lo delata a mitad de frase. **Los metadatos no arreglaron el fallo: lo
+hicieron medible.**
+
 ---
 
 ## Método: medir antes de construir
 
-Durante este proyecto se propusieron tres arreglos caros. **Dos estaban equivocados, y medir es lo
-que lo demostró.**
+Durante este proyecto se propusieron cuatro arreglos caros. **Tres estaban equivocados, y medir es
+lo que lo demostró.**
 
 **"Los fragmentos están cortados a mitad de lista — hay que reindexar con otra estrategia."**
 Sonaba bien, venía con evidencia, y costaba una tarde entera volver a partir 577 fragmentos. Un
@@ -101,14 +168,17 @@ tamaño no es la palanca — **dónde se corta, sí**.
 `maxTokens` recorta la salida: trata el síntoma. Para los modelos de la familia GPT-5 el parámetro
 que manda es `reasoning_effort`, porque *"responder con RAG no es una tarea de razonamiento"*
 ([Microsoft](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/gpt-5-will-it-rag/4442676)).
-El modelo estaba razonando un problema que la búsqueda ya había resuelto.
+
+**"Escribir un preprocesador que extraiga el § de cada fragmento."**
+Dos horas de parseo que sobraron por una pregunta que nadie había hecho: *¿de dónde salió este
+PDF?* La fuente publica el mismo texto con la estructura ya puesta.
 
 El patrón: **los fallos que cuestan caro no son los que revientan.** Un parámetro mal puesto se
 anuncia solo — el sistema falla y te lo dice. Un diagnóstico seguro de sí mismo, no: se lee bien,
 suena terminado, y te manda a construir lo equivocado durante media tarde.
 
-Los tres se atajaron igual: preguntando si eso estaba verificado o se estaba afirmando de memoria,
-y corriendo el experimento barato antes de autorizar el caro.
+Los cuatro se atajaron igual: preguntando si eso estaba verificado o se estaba afirmando de
+memoria, y corriendo el experimento barato antes de autorizar el caro.
 
 ---
 
@@ -116,37 +186,55 @@ y corriendo el experimento barato antes de autorizar el caro.
 
 Van escritos porque un resultado sin sus límites no es un resultado.
 
-- **Un solo documento, 577 fragmentos.** Pedir 20 es el 3.5% de este corpus; contra 100.000
-  fragmentos sería el 0.02%. **El arreglo del `topK` no escala** — pasado cierto volumen la
-  respuesta es reranking, no pedir más fragmentos.
-- **20 preguntas.** La guía de los practicantes sitúa un golden dataset inicial en
-  [50–100](https://qdrant.tech/blog/rag-evaluation-guide/).
-- **El corpus tiene enmiendas hasta marzo de 2013.** Las multas civiles del § 160.404 se ajustan
-  por inflación, así que el sistema responde cifras de 2013. Eso es un problema del corpus, no de
-  la recuperación — y mantener los documentos al día es parte del servicio, no un extra.
-- **Recuperación y generación se califican juntas.** La evaluación mide la respuesta final; no
-  registra por separado si el fragmento correcto llegó a entrar en el contexto.
+- **20 preguntas, así que el puntaje absoluto carga ±19 puntos.** La guía de los practicantes
+  sitúa un golden dataset inicial en [50–100](https://qdrant.tech/blog/rag-evaluation-guide/) — y
+  ni siquiera 50 lo baja de ±12. La comparación pareada es el resultado; el porcentaje es un orden
+  de magnitud.
+- **653 fragmentos.** Pedir 20 es el 3% de este corpus; contra 100.000 sería el 0.02%. **El arreglo
+  del `topK` no escala** — pasado cierto volumen la respuesta es reranking.
+- **Solo búsqueda vectorial, sin híbrida.** Los embeddings encuentran por significado, no por
+  cadena exacta: son débiles buscando un `164.404` literal. La búsqueda por palabras clave (BM25)
+  no lo es, y los sistemas de producción corren las dos. En la medición de Anthropic, sumar BM25
+  bajó el fallo de recuperación de 3.7% a 2.9%.
+- **La tabla no tiene índice vectorial** — solo la clave primaria. Cada búsqueda recorre los 653
+  fragmentos uno por uno. Con este corpus no se nota; con cien mil, sí.
+- **Dos de los veinte puestos recuperados eran encabezados de sección** — una línea cada uno, sin
+  aportar nada. Un 10% del contexto desperdiciado.
+- **El § 160.404 remite a la parte 102 del 45 CFR para los montos ajustados por inflación, y la
+  parte 102 no está en el corpus.** La norma se referencia fuera de sus propias partes; responder
+  del todo una pregunta sobre multas exigiría cargarla.
 
 ---
 
 ## Lo que sigue
 
-1. **Parent-document retrieval** — las cuatro preguntas que siguen fallando tienen su respuesta
-   completa dentro de una sola sección. Devolver la sección entera le gana a devolver veinte
-   fragmentos sueltos, y arregla el problema de ruido que rompió la pregunta 16.
-2. **Arreglar la pregunta 2 en el prompt** — que cite antes de resumir. Ni el chunking ni el
-   `topK` tocan un fallo de generación.
-3. **`reasoning_effort: low`** y un **timeout de 30–60 s** con aviso al usuario. El corte actual
-   está en 604 s, que en un chat es lo mismo que no tener ninguno.
+1. **Reranking** — el único cambio que ataca los dos fallos abiertos a la vez: el ruido que rompió
+   la pregunta 16 y el fragmento del § 164.410 que llegó al puesto 2. `bge-reranker-v2-m3` corre en
+   el mismo Ollama. El costo es latencia, en CPU sin GPU, y **ninguna fuente que encontré da una
+   cifra medida de cuánto** — así que se mide aquí.
+2. **Búsqueda híbrida (BM25 + vectorial)** con Reciprocal Rank Fusion. Un índice GIN sobre
+   `tsvector` al lado del vectorial — sin infraestructura nueva.
+3. **Arreglar la pregunta 2 en el prompt** — que cite antes de resumir. Ni el chunking ni el `topK`
+   tocan un fallo de generación.
 
 ---
 
 ## Estructura del repositorio
 
 ```
-docker-compose.yml           Postgres con pgvector y Ollama, sin puertos publicados
-evaluacion/preguntas.md      Las 20 preguntas, las respuestas verificadas a mano y los resultados
-evaluacion/investigacion-*   La investigación con fuentes detrás de las decisiones de chunking
+docker-compose.yml              Postgres con pgvector y Ollama, sin puertos publicados
+corpus/descargar-corpus.ps1     Baja 45 CFR 160/162/164 de la API del eCFR → un .md por sección
+corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de n8n para indexarla
+evaluacion/preguntas.md         Las 20 preguntas, las respuestas verificadas a mano y los resultados
+evaluacion/investigacion-*      La investigación con fuentes detrás de las decisiones
 ```
 
-Los secretos viven en un `.env` que no se versiona. La base de datos no publica ningún puerto.
+El corpus no se versiona: `descargar-corpus.ps1` lo regenera en unos diez segundos, y estaría
+desactualizado desde el momento en que se subiera.
+
+**Los documentos de la evaluación están en español a propósito.** Las preguntas se hacen en español
+contra una norma en inglés: ese cruce de idiomas es parte de lo que se mide, así que traducirlas
+borraría el experimento.
+
+Los secretos viven en un `.env` que no se versiona. La base de datos no publica ningún puerto. El
+webhook de carga exige un token de cabecera.

@@ -1,1 +1,5 @@
 .env
+
+# El corpus lo regenera descargar-corpus.ps1 en diez segundos desde la fuente
+# oficial. Versionarlo seria publicar una copia que envejece desde el commit.
+corpus/secciones/
