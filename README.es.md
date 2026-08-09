@@ -40,6 +40,12 @@ Reportarlo como "mejoró a 80%" sería reportar ruido.
 El primer cambio fue un canje. El segundo no. Y esa diferencia solo se ve porque las mismas 20
 preguntas corrieron contra los dos.
 
+**Y los cuatro fallos que quedan no son de recuperación.** Medido aparte, sin ningún LLM de por
+medio: la búsqueda vectorial devuelve la sección esperada en **16 de 16** preguntas (MRR 0.865), y
+en esas cuatro concretamente la deja en los puestos **1, 1, 2 y 1**. El recuperador ya está en su
+techo — las cuatro fallan al redactar. La búsqueda híbrida se construyó para arreglarlas y empeoró
+la recuperación; ver *Construido, medido, descartado*.
+
 ---
 
 ## Qué responde de verdad
@@ -212,6 +218,10 @@ El término aparece por toda la norma, así que la búsqueda por significado tra
 dejó tres puestos de veinte a la única sección que contesta. **Ese es el caso de libro para búsqueda
 híbrida y reranking.**
 
+> **Medido el 9 ago, y aquí el libro se equivocó.** La búsqueda híbrida sacó al § 160.103 del top 10
+> por completo; la vectorial pura lo tiene de **primero**. La dilución es real —3 puestos de 20— pero
+> el arreglo que se propuso para ella, no. Ver *Construido, medido, descartado*.
+
 **Dos hipótesis murieron a mitad de ronda.** La primera: *"las preguntas de lista fallan y las de
 dato puntual aciertan"* — la mató la P12, cuatro niveles de multas respondidos enteros. La segunda:
 *"falla cuando la sección es enorme"* — la mató la P16, perfecta sobre una de las secciones más
@@ -281,10 +291,10 @@ Van escritos porque un resultado sin sus límites no es un resultado.
   entradas idénticas.
 - **653 fragmentos.** Pedir 20 es el 3% de este corpus; contra 100.000 sería el 0.02%. **El arreglo
   del `topK` no escala.**
-- **Solo búsqueda vectorial, sin híbrida.** Los embeddings encuentran por significado, no por cadena
-  exacta: son débiles buscando un `164.404` literal. En la medición de Anthropic, sumar BM25 bajó el
-  fallo de recuperación de 3.7% a 2.9%. Ese número es un techo, no un pronóstico: **ellos usaron
-  BM25 y esta máquina no puede** — ver la corrección en *Lo que sigue*.
+- **Solo búsqueda vectorial, sin híbrida — y ahora eso es una decisión, no una carencia.** Los
+  embeddings encuentran por significado, no por cadena exacta. En la medición de Anthropic, sumar
+  BM25 bajó el fallo de recuperación de 3.7% a 2.9%; esta máquina no puede correr BM25, y la versión
+  con `ts_rank_cd` se midió aquí y **empeoró** la recuperación. Ver *Construido, medido, descartado*.
 - **La tabla no tiene índice vectorial** — solo la clave primaria. Cada búsqueda recorre los 653
   fragmentos uno por uno.
 - **Dos de los veinte puestos recuperados eran encabezados de sección** — una línea cada uno. Un 10%
@@ -294,37 +304,49 @@ Van escritos porque un resultado sin sus límites no es un resultado.
 
 ---
 
+## Construido, medido, descartado: la búsqueda híbrida
+
+La búsqueda híbrida era el primer punto de esta lista. Se construyó, se midió contra el golden
+dataset, y **empeoró el sistema.** No está conectada al agente.
+
+|  | Recall@10 | MRR |
+|---|---|---|
+| **Vectorial pura** | **16/16** | **0.865** |
+| Híbrida, RRF, 0.3 vectorial / 0.7 léxica | 13/16 | 0.435 |
+
+Ocho de dieciséis preguntas quedaron peor, una mejor, y tres se cayeron del top 10 por completo.
+Método y tabla pregunta por pregunta: [`evaluacion/preguntas.md`](evaluacion/preguntas.md), ronda 4.
+La consulta, con el veredicto arriba del todo: [`sql/busqueda-hibrida.sql`](sql/busqueda-hibrida.sql).
+
+**Por qué falló aquí.** Los documentos están en inglés y las preguntas en español. La búsqueda por
+texto no cruza idiomas, así que la mitad léxica aporta ruido en vez de señal — y se lleva el 70% del
+peso. La advertencia estaba escrita en este mismo README antes de que existiera la medición; la
+medición la convirtió de nota al pie en titular.
+
+**Lo que la misma medición dijo de los cuatro fallos abiertos.** Las preguntas 6, 7, 8 y 15 fallaron
+en la ronda 3. Sus puestos en vectorial pura son **1, 1, 2 y 1** — la sección correcta ya llegaba
+arriba. Son fallos de redacción, no de recuperación. **Ningún trabajo sobre el recuperador los
+habría movido**, y la versión anterior de esta sección proponía exactamente eso.
+
+**Dos predicciones que hizo este README, las dos falsas.** Decía que la híbrida *"encontraría el
+`160.103` como cadena exacta"*: la híbrida lo sacó del top 10 mientras la vectorial lo tiene de
+primero. Y decía *"si repara 2 o 3 de las 20, funcionó"*: no reparó ninguna y rompió ocho. Las dos
+frases se quedan arriba, sin corregir, porque una predicción borrada después del hecho no enseña
+nada.
+
+La consulta se queda en el repositorio. Es correcta, está documentada, y un corpus en un solo idioma
+probablemente sí se beneficiaría. **El hallazgo es que una técnica recomendada, medida, puede ser un
+retroceso** — y que la búsqueda vectorial con un modelo de embeddings multilingüe ya estaba en el
+techo para este corpus.
+
+---
+
 ## Lo que sigue
 
-1. **Búsqueda híbrida (`ts_rank_cd` + vectorial) con Reciprocal Rank Fusion.** Un índice GIN sobre
-   `to_tsvector('english', text)` al lado del vectorial — sin servicio nuevo, sin contenedor nuevo.
-   Las dos búsquedas y la fusión caben en **una sola sentencia SQL**: es la forma del
-   [ejemplo oficial de pgvector](https://github.com/pgvector/pgvector-python/blob/master/examples/hybrid_search/rrf.py),
-   dos CTE unidas con `FULL OUTER JOIN` y puntuadas `1.0 / (k + rank)` con `k = 60` — una constante
-   que viene del paper de Cormack et al. (2009) y que quienes lo usan recomiendan **probar, no
-   heredar**. Se traen 20 candidatos de cada lado, se fusionan, se devuelven 10.
+1. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
+   generación — y la medición de arriba dice que la generación es donde viven los fallos que quedan.
 
-   Opcionalmente **con el peso cargado al lado léxico**, siguiendo a
-   [ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual): su
-   reparto 70/30 *"works well for technical documentation where users often search for specific
-   terms, function names, or error messages."* Un corpus de `§ 164.404` y `(c)(1)(A)` es justo eso,
-   y es donde la búsqueda vectorial sola es más débil.
-
-   **Corrección del 9 ago:** esta sección decía *BM25*. Era falso. BM25 exige la extensión
-   `pg_search` de ParadeDB, que esta imagen no trae — lo que Postgres da de fábrica es `ts_rank_cd`,
-   que puntúa cada documento aislado y no conoce estadísticas del corpus completo. ParadeDB sostiene
-   que esa carencia pesa a escala. **Supuesto sin probar:** con 653 fragmentos, donde `164.404`
-   aparece en dos o tres, el filtro `@@` debería hacer casi todo el trabajo antes de que el ranking
-   importe. Es una suposición, y la evaluación dirá.
-
-   **Un límite que impone este corpus:** los documentos están en inglés y las preguntas en español.
-   La búsqueda por texto no cruza idiomas, así que este arreglo debería mover las preguntas con
-   identificador y casi nada más. Si repara 2 o 3 de las 20, funcionó.
-
-2. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
-   generación.
-
-3. **Reranking, y no en esta máquina.** `bge-reranker-v2-m3` atacaría los dos tipos de fallo a la
+2. **Reranking, y no en esta máquina.** `bge-reranker-v2-m3` atacaría los dos tipos de fallo a la
    vez, pero **Ollama no puede servir modelos de reranking.** Verificado el 9 ago: un mantenedor de
    Ollama lo dice sin rodeos en el [issue #10467](https://github.com/ollama/ollama/issues/10467),
    cerrado como duplicado del [#3368](https://github.com/ollama/ollama/issues/3368), la petición de
@@ -349,8 +371,10 @@ corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de 
 workflows/cargar-secciones.json El workflow de indexación. Se importa en n8n.
 workflows/preguntar.json        El workflow de consulta: agente, recuperador y embeddings locales.
 workflows/system-prompt.md      Las cinco reglas del prompt, y qué se midió que hace cada una
-sql/busqueda-hibrida.sql        La recuperación híbrida en una sentencia, con el porqué de cada decisión
-evaluacion/preguntas.md         Las 20 preguntas, las respuestas verificadas a mano y las tres rondas
+sql/busqueda-hibrida.sql        La recuperación híbrida en una sentencia — medida, peor, y guardada
+                                porque el hallazgo es ese. El veredicto va arriba del archivo.
+evaluacion/preguntas.md         Las 20 preguntas, las respuestas verificadas a mano y las cuatro rondas
+evaluacion/medir-recuperacion.py  Puntúa solo la recuperación, sin LLM: vectorial vs híbrida, recall@10 y MRR
 evaluacion/investigacion-*      La investigación con fuentes detrás de las decisiones
 ```
 

@@ -10,6 +10,27 @@
 --
 -- Every decision below was measured on this corpus on 2026-08-09. The numbers
 -- quoted in the comments are from that session, not from a blog post.
+--
+-- ---------------------------------------------------------------------------
+-- VERDICT, 2026-08-09: on this corpus this query is WORSE than plain vector
+-- search. Do not wire it into the agent.
+--
+--   Recall@10   plain vector 16/16   hybrid 13/16
+--   MRR         plain vector 0.865   hybrid 0.435
+--
+-- Measured with evaluacion/medir-recuperacion.py over the 16 golden questions
+-- that have a known section. It made 8 questions worse, 1 better, and lost 3
+-- outright.
+--
+-- The reason was written below as a known limit before the numbers existed: the
+-- documents are English, the questions are Spanish, so the lexical half cannot
+-- contribute — and it holds 70% of the weight. Hybrid search is a good default
+-- that this corpus punishes.
+--
+-- The file stays because the query is correct and the finding is the point: a
+-- recommended technique, measured, that turned out to hurt. Ordinary vector
+-- search with a multilingual embedding model was already at the ceiling.
+-- ---------------------------------------------------------------------------
 
 
 -- ---------------------------------------------------------------------------
@@ -84,14 +105,20 @@ lexica AS (
 -- terms, function names, or error messages." A corpus of § 164.404 and
 -- (c)(1)(A) is exactly that.
 --
--- What the fusion buys, measured here: searching "164.404" on the lexical side
--- alone ranked the section that DEFINES it **last**, behind three sections that
--- merely cross-reference it — ts_rank_cd rewards repetition and knows nothing
--- about the corpus. After fusion it ranks **first**, because it is the only
--- fragment both searches found.
+-- What the fusion buys, measured on ONE question: searching "164.404" on the
+-- lexical side alone ranked the section that DEFINES it **last**, behind three
+-- sections that merely cross-reference it — ts_rank_cd rewards repetition and
+-- knows nothing about the corpus. After fusion it ranked **first**, because it
+-- is the only fragment both searches found.
+--
+-- That paragraph was written after one question and it reads like a result. It
+-- is not. Across all 16 the fusion loses to plain vector search — see the
+-- verdict at the top. One good example is an anecdote; the anecdote is what
+-- made this look like it worked.
 SELECT
     d.text,
-    d.metadata,
+    d.metadata->>'seccion'  AS seccion,
+    d.metadata->>'citation' AS citation,
     COALESCE(0.3 / (60 + s.puesto), 0.0) +
     COALESCE(0.7 / (60 + l.puesto), 0.0) AS puntaje
 FROM semantica s

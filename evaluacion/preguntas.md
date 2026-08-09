@@ -417,3 +417,93 @@ Nothing changed between them.
 carries two sources of noise: the sampling one and the model's own. A rigorous evaluation would run
 each question several times and average.
 
+---
+
+## Round 4 — retrieval measured on its own (9 August 2026)
+
+Rounds 1 to 3 scored the whole pipeline: retrieval and writing at once. A wrong answer could not be
+attributed to either. This round measures **only retrieval**, with no LLM anywhere: for each
+question, does the expected section come back in the top 10, and in what position.
+
+That makes it deterministic, free, and repeatable. Script:
+[`medir-recuperacion.py`](medir-recuperacion.py), run against the live server.
+
+Only the 16 questions with a known section take part. The four control questions are excluded by
+design: their correct behaviour is silence, which is the writer's job, not the retriever's.
+
+**Compared:** plain vector search (`ORDER BY embedding <=> query`, top 10 — what the agent uses
+today) against the hybrid query in [`../sql/busqueda-hibrida.sql`](../sql/busqueda-hibrida.sql).
+
+| # | § expected | Vector rank | Hybrid rank | Change |
+|---|---|---|---|---|
+| 1 | 164.404 | 1 | 1 | = |
+| 2 | 164.406 | 1 | 8 | −7 |
+| 3 | 164.408 | 2 | — | lost |
+| 4 | 164.410 | 1 | 2 | −1 |
+| 5 | 164.316 | 2 | 9 | −7 |
+| 6 | 160.103 | 1 | — | lost |
+| 7 | 164.402 | 1 | 6 | −5 |
+| 8 | 164.308 / 310 / 312 | 2 | 1 | +1 |
+| 9 | 164.524 | 3 | 10 | −7 |
+| 10 | 164.526 | 1 | — | lost |
+| 11 | 164.528 | 1 | 1 | = |
+| 12 | 160.404 | 1 | 1 | = |
+| 13 | 160.408 | 1 | 3 | −2 |
+| 14 | 164.404 | 1 | 8 | −7 |
+| 15 | 164.520 | 1 | 2 | −1 |
+| 16 | 164.502 | 1 | 1 | = |
+
+|  | Recall@10 | MRR |
+|---|---|---|
+| **Plain vector** | **16/16** | **0.865** |
+| Hybrid (0.3 vector / 0.7 lexical) | 13/16 | 0.435 |
+
+### Finding 1 — hybrid search makes this system worse
+
+Eight questions worse, one better, three lost entirely. The reason was already written in the SQL
+file as a known limit, before any of these numbers existed: **the documents are English and the
+questions are Spanish, so the lexical half cannot contribute — and it carries 70% of the weight.**
+The majority of the vote went to the half that does not speak the language.
+
+Hybrid retrieval is a sound default. On this corpus it is a downgrade. That is the finding, and it
+only exists because it was measured instead of assumed.
+
+### Finding 2 — this document predicted the opposite, in writing
+
+Round 3 closed the analysis of question 6 with: *"Textbook case for the two pending fixes: hybrid
+search would find `160.103` as an exact string."*
+
+Hybrid search **dropped § 160.103 out of the top 10 entirely.** Plain vector search has it at
+position 1. The prediction was specific, reasonable, and wrong — it is left above, uncorrected, on
+purpose.
+
+### Finding 3 — retrieval was never the bottleneck
+
+The four failures of round 3 were questions 6, 7, 8 and 15. Their vector ranks: **1, 1, 2, 1.**
+
+The right section was already arriving, at the top, every time. Those answers failed while writing:
+question 7 gave the definition but not the exclusions, question 15 gave four of the eight required
+elements. Weeks of retrieval tuning would have moved a number that was already at its ceiling.
+
+**This is the argument for measuring the halves separately.** Running the 20 questions through the
+chat again would have produced a score that moved for reasons nobody could name.
+
+### Method note — three bugs in the measuring script, and what they share
+
+Worth recording because the failure mode repeats:
+
+1. The script read the **first column** of each row. In the hybrid query that column is the fragment
+   text, complete with newlines. It was comparing paragraphs against section numbers.
+2. The SQL was cut at the **last `;`** — and one of the closing comments contains a semicolon, so
+   the cut landed past the query and left `LIMIT 10;` inside the parentheses.
+3. **`psql` exits 0 after a syntax error.** The query failed, printed the error to stderr, and the
+   script read the empty stdout as "no rows found" — a legitimate-looking answer. Fixed with
+   `ON_ERROR_STOP=1`.
+
+The first two produced a perfect **0/16 for hybrid search**, which is what gave them away: on a
+corpus where it had visibly worked minutes earlier, a flawless zero is a broken ruler, not a result.
+
+All three are the same shape as the Telegram node that returned 200 without sending anything, and
+as Ollama answering 200 with `embeddings: []` for an empty question: **a component reporting
+success while doing nothing.** Checking the exit code is not checking the result.
+

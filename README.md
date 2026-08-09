@@ -39,6 +39,12 @@ question. Reporting it as "improved to 80%" would be reporting noise.
 The first change was a trade. The second wasn't. That distinction is only visible because the same
 20 questions ran against both.
 
+**And the four remaining failures are not retrieval failures.** Measured separately, with no LLM
+involved: plain vector search returns the expected section for **16 of 16** questions (MRR 0.865),
+and for those four specifically it ranks it **1, 1, 2 and 1**. The retriever is already at its
+ceiling — the four fail while writing the answer. Hybrid search was built to fix them and made
+retrieval worse; see *Built, measured, rejected*.
+
 ---
 
 ## What it actually answers
@@ -208,6 +214,10 @@ The term appears throughout the regulation, so semantic search returned the topi
 slots out of twenty to the one section that answers. **That is the textbook case for hybrid search
 and reranking.**
 
+> **Measured on 9 Aug, and the textbook was wrong here.** Hybrid search dropped § 160.103 out of the
+> top 10 altogether; plain vector search ranks it **first**. The dilution is real — 3 of 20 slots —
+> but the fix proposed for it is not. See *Built, measured, rejected*.
+
 **Two hypotheses died mid-run.** First: *"list questions fail, single-fact questions pass"* — killed
 by Q12, a four-tier penalty schedule answered completely. Second: *"it fails when the section is
 huge"* — killed by Q16, perfect out of one of the largest sections. The third hypothesis, rank
@@ -277,10 +287,10 @@ Stated because a result without its limits isn't a result.
 - **One run per question.** Q14 proved the model gives different answers to identical inputs.
 - **653 chunks.** Asking for 20 is 3% of this corpus; against 100,000 it would be 0.02%. **The
   `topK` fix does not scale.**
-- **Vector search only, no hybrid.** Embeddings match by meaning, not exact string — weak at finding
-  a literal `164.404`. In Anthropic's measurement, adding BM25 dropped retrieval failure from 3.7%
-  to 2.9%. Read that number as a ceiling, not a forecast: **they used BM25 and this box cannot** —
-  see the correction in *What's next*.
+- **Vector search only, no hybrid — and that is now a decision, not a gap.** Embeddings match by
+  meaning, not exact string. In Anthropic's measurement, adding BM25 dropped retrieval failure from
+  3.7% to 2.9%; this box cannot run BM25, and the `ts_rank_cd` version was measured here and made
+  retrieval worse. See *Built, measured, rejected*.
 - **No vector index on the table** — only the primary key. Every search scans all 653 chunks.
 - **Two of twenty retrieved slots were section headings** — one line each. ~10% of context wasted.
 - **§ 160.404 points to 45 CFR Part 102 for inflation-adjusted penalties, and Part 102 is not in the
@@ -288,37 +298,49 @@ Stated because a result without its limits isn't a result.
 
 ---
 
+## Built, measured, rejected: hybrid search
+
+Hybrid retrieval was the top item on this list. It was built, measured against the golden dataset,
+and **it made the system worse.** It is not wired into the agent.
+
+|  | Recall@10 | MRR |
+|---|---|---|
+| **Plain vector search** | **16/16** | **0.865** |
+| Hybrid, RRF, 0.3 vector / 0.7 lexical | 13/16 | 0.435 |
+
+Eight of sixteen questions ranked worse, one better, three fell out of the top 10 entirely. Method
+and per-question table: [`evaluacion/preguntas.md`](evaluacion/preguntas.md), round 4. The query,
+with the verdict at the top: [`sql/busqueda-hibrida.sql`](sql/busqueda-hibrida.sql).
+
+**Why it failed here.** The documents are English and the questions are Spanish. Lexical search does
+not cross languages, so the lexical half contributes noise instead of signal — and it holds 70% of
+the weight. The caveat was written into this README before the measurement existed; the measurement
+turned it from a caveat into the headline.
+
+**What the same measurement showed about the four open failures.** Questions 6, 7, 8 and 15 failed
+in round 3. Their plain-vector ranks are **1, 1, 2 and 1** — the right section was already arriving
+at the top. Those are generation failures, not retrieval failures. **No amount of retrieval work
+would have moved them**, and the previous version of this section proposed exactly that.
+
+**Two predictions this README made, both wrong.** It said hybrid search *"would find `160.103` as an
+exact string"* — hybrid dropped § 160.103 out of the top 10 while plain vector holds it at rank 1.
+And it said *"if it repairs 2 or 3 of the 20, it worked"*: it repaired none and broke eight. Both
+sentences are left in the text above, uncorrected, because a prediction quietly deleted after the
+fact teaches nothing.
+
+The query stays in the repository. It is correct, it is documented, and a corpus in one language
+would likely benefit from it. **The finding is that a recommended technique, measured, can be a
+downgrade** — and that plain vector search with a multilingual embedding model was already at the
+ceiling for this corpus.
+
+---
+
 ## What's next
 
-1. **Hybrid search (`ts_rank_cd` + vector) with Reciprocal Rank Fusion.** A GIN index over
-   `to_tsvector('english', text)` beside the vector one — no new service, no new container. Both
-   searches and the fusion fit in **one SQL statement**: that is the shape of
-   [pgvector's own example](https://github.com/pgvector/pgvector-python/blob/master/examples/hybrid_search/rrf.py),
-   two CTEs joined with `FULL OUTER JOIN` and scored `1.0 / (k + rank)` with `k = 60` — a constant
-   that comes from Cormack et al. (2009) and that the example's users recommend testing rather than
-   inheriting. Take 20 candidates from each side, fuse, return 10.
+1. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
+   failure — and the measurement above says generation is where the remaining failures live.
 
-   Optionally **weighted toward the lexical side**, following
-   [ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual): their
-   70/30 split *"works well for technical documentation where users often search for specific terms,
-   function names, or error messages."* A corpus of `§ 164.404` and `(c)(1)(A)` is exactly that, and
-   it is where vector-only search is weakest.
-
-   **Correction, 9 Aug:** this section previously said *BM25*. It was wrong. BM25 needs ParadeDB's
-   `pg_search` extension, which this image does not carry — what Postgres ships natively is
-   `ts_rank_cd`, which scores each document in isolation and has no corpus-wide term statistics.
-   ParadeDB argues that gap matters at scale. **Untested assumption:** at 653 fragments, where
-   `164.404` appears in two or three of them, the `@@` filter should do most of the work before
-   ranking matters. That is a guess, and the evaluation will say.
-
-   **A caveat this corpus forces:** the documents are English and the questions are Spanish. Lexical
-   search does not cross languages, so this fix should move the identifier questions and almost
-   nothing else. If it repairs 2 or 3 of the 20, it worked.
-
-2. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
-   failure.
-
-3. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
+2. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
    once, but **Ollama cannot serve reranking models.** Verified 9 Aug: an Ollama maintainer states it
    plainly in [issue #10467](https://github.com/ollama/ollama/issues/10467), closed as a duplicate of
    [#3368](https://github.com/ollama/ollama/issues/3368), the feature request open since March 2024.
@@ -342,8 +364,10 @@ corpus/cargar-en-n8n.ps1        Posts each section to an authenticated n8n webho
 workflows/cargar-secciones.json The ingestion workflow. Import into n8n.
 workflows/preguntar.json        The query workflow: agent, retriever and local embeddings.
 workflows/system-prompt.md      The five prompt rules, and what each one was measured to do
-sql/busqueda-hibrida.sql        Hybrid retrieval in one statement, with why each choice was made
-evaluacion/preguntas.md         The 20 questions, hand-verified answers, and all three rounds
+sql/busqueda-hibrida.sql        Hybrid retrieval in one statement — measured, worse, and kept as the
+                                finding. Verdict at the top of the file.
+evaluacion/preguntas.md         The 20 questions, hand-verified answers, and all four rounds
+evaluacion/medir-recuperacion.py  Scores retrieval alone, no LLM: vector vs hybrid, recall@10 and MRR
 evaluacion/investigacion-*      Sourced research behind the chunking and production decisions
 ```
 
