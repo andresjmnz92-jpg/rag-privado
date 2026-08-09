@@ -247,3 +247,160 @@ que le cargaron, y mantenerlos al día es parte del servicio, no un extra.
 
 **Consecuencia práctica:** las respuestas de la pregunta 12 no se cuentan como fallo del sistema
 si coinciden con el documento. Se anotan aquí.
+
+---
+
+# Ronda 3 — corpus por secciones (9 de agosto de 2026)
+
+**Qué cambió respecto de las dos rondas anteriores:** una sola variable, el corpus.
+
+| | Rondas 1 y 2 | Ronda 3 |
+|---|---|---|
+| Fuente | PDF de marzo 2013, 115 páginas | API del eCFR, vigente al 6 ago 2026 |
+| Unidad | 577 fragmentos cortados cada 1000 caracteres | 653 fragmentos, **ninguno cruza de sección** |
+| Metadatos | ninguno útil | `seccion`, `citation`, `source`, `retrieved` en cada uno |
+
+`topK` sigue en 20, el prompt sin tocar y el modelo sin tocar, **a propósito**: si se cambia más
+de una cosa, el número no dice cuál la movió.
+
+**Antes de contar, dos criterios fijados:**
+
+1. **Una cita equivocada cuenta como fallo.** El prompt ordena citar, y para lo que se quiere
+   vender una cita que no verifica es peor que no citar: quien la abra y no encuentre nada deja
+   de confiar en las otras diecinueve respuestas.
+2. **Mezclar contenido de otra sección cuenta como fallo**, aunque el texto exista y esté bien
+   citado. Categoría propia: *"completa con elemento ajeno"*.
+
+## Resultados
+
+| # | Sección | Veredicto | Nota |
+|---|---|---|---|
+| 1 | § 164.404 | ✅ | Correcta. Primera vez que cita la sección exacta y no el nombre del PDF |
+| 2 | § 164.406 | ✅ | **Arreglada.** Ayer dijo "a partir de 500"; hoy "más de 500" |
+| 3 | § 164.408 | ✅ | Los dos casos completos. Ayer metía una frase del § 164.404; hoy no |
+| 4 | § 164.410 | ✅ | Mismo plazo y casi el mismo texto que la 1, en otra sección. No las cruzó |
+| 5 | § 164.316 | ✅ | Con el matiz "lo que ocurra después" |
+| 6 | § 160.103 | ❌ | **Incompleta.** Falta el `(1)(i)`, la definición núcleo — ver diagnóstico abajo |
+| 7 | § 164.402 | ❌ | **Incompleta.** Solo la definición base: faltan las 3 exclusiones y los 4 factores |
+| 8 | § 164.308/310/312 | ❌ | **Contenido correcto, cita equivocada:** citó § 164.530 y § 164.304 |
+| 9 | § 164.524 | ✅ | **Arreglada.** Ayer solo "30 días"; hoy con extensión, aviso y fecha |
+| 10 | § 164.526 | ✅ | 60 días, extensión y aviso. Sin cruzarla con la 9 |
+| 11 | § 164.528 | ✅ | Con el matiz del período menor a petición del individuo |
+| 12 | § 160.404 | ✅ | Los cuatro niveles con cifras, más el caso previo a feb-2009 |
+| 13 | § 160.408 | ✅ | Los cinco factores con sus ejemplos |
+| 14 | § 164.404 | ✅ | Los cinco elementos + lenguaje sencillo. **Ayer no respondió (timeout a 604 s)** |
+| 15 | § 164.520 | ❌ | Cita los derechos en `(b)(1)(v)` cuando son `(iv)`, y clasifica el `(b)(1)(iii)` —obligatorio— como opcional |
+| 16 | § 164.502 | ✅ | Los seis casos exactos. **Era el único falso negativo de la ronda 2** |
+| 17 | control | ✅ | Frase exacta |
+| 18 | control | ✅ | Frase exacta |
+| 19 | control | ✅ | La trampa de la certificación que no existe |
+| 20 | control | ✅ | Frase exacta |
+
+## Resultado
+
+| | topK 5 | topK 20 | **Corpus por secciones** |
+|---|---|---|---|
+| Correctas y completas (de 16) | 7 | 11 | **12** |
+| Fallos (de 16) | 9 | 5 | **4** |
+| Falsos negativos | 0 | **1** | **0** |
+| Control (de 4) | 4 | 4 | **4** |
+| **Alucinaciones** | **0** | **0** | **0** |
+| **Puntaje estricto** | 11/20 — 55% | 15/20 — 75% | **16/20 — 80%** |
+
+### Lo que este número NO dice
+
+**80% con n=20 carga ±18 puntos.** Pasar de 75% a 80% es **una sola pregunta de diferencia** y
+está dentro del ruido: no se puede afirmar mejora estadística con esta muestra.
+
+**Y el criterio de esta ronda fue más estricto que el de las anteriores.** Se añadió *"una cita
+equivocada cuenta como fallo"*, algo que en las rondas 1 y 2 ni siquiera era evaluable —todas las
+respuestas citaban el nombre del PDF entero, así que no había cita que verificar—. Con el
+criterio viejo, las preguntas 8 y 15 habrían pasado y el resultado sería **18/20 — 90%**.
+
+La vara se endureció porque ahora hay más que medir, no para inflar el número. Ambas cifras
+quedan escritas.
+
+### Lo que sí dice, y no depende del porcentaje
+
+**Ninguna respuesta que funcionaba dejó de funcionar.** Esa es la diferencia real con el cambio
+anterior:
+
+| Subir `topK` de 5 a 20 | arregló 4 · **rompió 1** |
+| Cambiar el corpus | arregló 3 (2, 9, 16) + recuperó la 14, que antes ni respondía · **rompió 0** |
+
+El `topK` fue un canje. Este cambio no tuvo coste.
+
+**Las citas pasaron de decorativas a verificables.** Antes: *"Combined Regulation Text of All
+Rules"* — el nombre del PDF de 115 páginas. Ahora: `45 CFR 164.404` con su URL. Eso no suma
+puntos y es lo que más importa para vendérselo a una clínica.
+
+**Y por eso mismo aparecieron dos fallos nuevos** (8 y 15, citas equivocadas). No son fallos
+nuevos del sistema: son fallos que antes eran **invisibles**. Una cita que apunta al documento
+entero nunca puede estar mal.
+
+**Los cuatro fallos tienen causa identificada**, algo imposible en las rondas anteriores:
+
+- **6, 7, 15** — dilución de ranking. El término de la pregunta (*business associate*, *breach*,
+  *notice of privacy practices*) aparece en muchas secciones, y los fragmentos de la que
+  **define** pierden puestos contra los diecisiete que solo **mencionan**. En la 6 se midió: 3 de
+  20 puestos para la sección correcta.
+- **8** — generación pura. Las tres categorías eran correctas; las citas, inventadas.
+
+Los tres primeros los ataca el reranking y la búsqueda híbrida. El cuarto, el prompt.
+
+### Dos hipótesis que los datos mataron durante la ronda
+
+1. *"Las preguntas de lista fallan; las de dato puntual aciertan."* — La 12 (cuatro niveles de
+   multas, completa) la desmintió.
+2. *"Falla cuando la sección es enorme."* — La 16 (§ 164.502, enorme, perfecta) la desmintió.
+
+La tercera —dilución por popularidad del término— **no se anuncia como conclusión**: encaja con
+los 20 casos, y se pone a prueba con el reranking.
+
+### El aviso metodológico que vale más que el número
+
+La pregunta 14 se corrió **dos veces con la misma configuración**. La primera trajo los cinco
+elementos **más uno del § 164.410 que no pertenece**; la segunda, los cinco limpios. Nada cambió
+entre ambas.
+
+**El modelo no es determinista.** Una sola ejecución por pregunta no es una medición estable, así
+que este 80% carga dos ruidos: el estadístico de la muestra y el del propio modelo. Una
+evaluación rigurosa correría cada pregunta varias veces y promediaría.
+
+## Diagnóstico de la 6 — leyendo lo que se recuperó, no la respuesta
+
+Es el primer fallo que se pudo diagnosticar mirando los fragmentos recuperados (ejecución 298),
+algo imposible en las rondas anteriores.
+
+**El fragmento con la definición núcleo no llegó.** El puesto 1 termina exactamente en
+*"...business associate means, with respect to a covered entity, **a person who:**"*, y el puesto 5
+empieza en *"**(ii)** Provides... legal, actuarial..."*. Entre los dos falta el `(1)(i)`, que es
+literalmente lo que la pregunta pide. **Existe en la base y quedó bajo el corte.**
+
+**Y la causa está a la vista:** de los 20 fragmentos recuperados, **solo 3 son del § 160.103**.
+Los otros 17 salen de § 164.504 (×5), § 164.502 (×4), § 164.410 (×3), § 164.314 (×2),
+§ 160.310 (×2), § 160.402 y § 162.923.
+
+Todos hablan **de** business associates; ninguno los **define**. El término aparece por toda la
+norma, así que la búsqueda por significado trajo el tema entero y le dejó tres puestos de veinte
+a la única sección que contesta.
+
+**Es el caso de libro para las dos cosas pendientes:** búsqueda híbrida encontraría `160.103` como
+cadena exacta, y un reranker pondría arriba el fragmento que define en vez de los que mencionan.
+
+## Una hipótesis que los datos mataron a mitad de ronda
+
+Tras las preguntas 6 y 7 pareció que el patrón era *"las preguntas de lista fallan y las de dato
+puntual aciertan"*. **La 12 lo desmintió**: cuatro niveles de multas con sus cifras, completa.
+
+Lo que separa a los fallos no es el formato de la respuesta sino **el tamaño de la sección**:
+
+| § 160.404 (multas) | 48 líneas | ✅ |
+| § 160.408 (factores) | corta | ✅ |
+| § 160.103 (definiciones) | decenas de definiciones | ❌ |
+| § 164.402 (*breach*) | larga, con exclusiones y factores | ❌ |
+
+Cuando la respuesta cabe en unos pocos fragmentos vecinos de una sección corta, llega entera.
+Cuando la sección es enorme, sus fragmentos compiten entre sí **y con los de todas las demás
+secciones que tocan el tema** por veinte puestos, y se cae la mitad.
+

@@ -5,16 +5,17 @@
 # ritmo lo marca el servidor. Ollama corre en CPU sin GPU, y al lado hay
 # workflows de un cliente en produccion.
 #
-# El token no va escrito aqui: este archivo se publica. Antes de correr:
+# Ni el token ni la URL van escritos aqui: este archivo se publica, y una URL de
+# webhook publicada es superficie regalada aunque exija token. Antes de correr:
+#   $env:RAG_N8N   = "https://tu-n8n.ejemplo.com"
 #   $env:RAG_TOKEN = "<el valor de la credencial RAG Carga>"
 
 $ErrorActionPreference = 'Stop'
 
-if (-not $env:RAG_TOKEN) {
-  throw 'Falta $env:RAG_TOKEN. Ponlo antes de correr este script.'
-}
+if (-not $env:RAG_N8N)   { throw 'Falta $env:RAG_N8N con la URL base de tu n8n.' }
+if (-not $env:RAG_TOKEN) { throw 'Falta $env:RAG_TOKEN. Ponlo antes de correr este script.' }
 
-$url = 'https://n8n.sikorre.com/webhook/rag-cargar-seccion'
+$url = "$($env:RAG_N8N.TrimEnd('/'))/webhook/rag-cargar-seccion"
 $cabeceras = @{ 'X-Carga-Token' = $env:RAG_TOKEN }
 $archivos = Get-ChildItem (Join-Path $PSScriptRoot 'secciones') -Filter *.md | Sort-Object Name
 

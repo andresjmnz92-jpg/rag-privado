@@ -84,28 +84,38 @@ For a customer, this is the service, not a footnote: **their documents age too.*
 20 questions with answers verified by hand against the source — 16 with a known answer, and
 **4 control questions whose correct answer is for the system to say it doesn't know**.
 
-| | topK = 5 | topK = 20 |
-|---|---|---|
-| Complete and correct | 7 | **11** |
-| Incomplete but not wrong | 7 | 3 |
-| Contained a wrong figure | 1 | 1 |
-| False negative (stayed silent while holding the answer) | 0 | **1** |
-| Control questions passed | **4 / 4** | **4 / 4** |
-| **Hallucinations** | **0** | **0** |
-| **Strict score** | **11/20 — 55%** | **15/20 — 75%** |
+| | PDF, topK 5 | PDF, topK 20 | **Section corpus** |
+|---|---|---|---|
+| Complete and correct (of 16) | 7 | 11 | **12** |
+| Failures (of 16) | 9 | 5 | **4** |
+| False negative (stayed silent while holding the answer) | 0 | **1** | **0** |
+| Control questions passed | **4 / 4** | **4 / 4** | **4 / 4** |
+| **Hallucinations** | **0** | **0** | **0** |
+| **Strict score** | 11/20 — 55% | 15/20 — 75% | **16/20 — 80%** |
 
-**Read these as a paired comparison, not as absolute quality.** With n=20 a single proportion
-carries roughly ±19 points of error; what the same 20 questions across two configurations *can*
-support is the direction and size of the change, because the hard questions are hard in both runs.
+**That +5 is not a result.** With n=20 the score carries ±18 points, and 75→80 is a single
+question. Anyone reporting it as "improved to 80%" is reporting noise.
 
-**Latency**, across 23 runs: median 16 s · mean 18 s · worst completed 262 s · one timeout at
-604 s.
+**And the third column was graded more harshly than the other two.** This round added *"a wrong
+citation counts as a failure"* — a rule that was not even applicable before, because every answer
+on the PDF corpus cited the name of the whole 115-page document. Under the old rule this run
+scores **18/20 — 90%**. Both numbers are in the evaluation file; moving the goalposts quietly
+would have been the dishonest option.
+
+### What the number can't tell you, and the comparison can
+
+**Nothing that worked stopped working.**
+
+| Raising `topK` from 5 to 20 | fixed 4 · **broke 1** |
+| Restructuring the corpus | fixed 3, plus recovered Q14 which previously timed out · **broke 0** |
+
+The `topK` change was a trade. This one wasn't. That is the finding — not the percentage.
+
+**Latency**, across 23 runs on the PDF corpus: median 16 s · worst completed 262 s · one timeout
+at 604 s. On the section corpus, question 1 answered in 14 s and question 14 — which previously
+never finished — in 29 s.
 
 **Indexing:** 653 chunks in about 9 minutes on 4 vCPU with no GPU. Paid once.
-
-> **Measurement of the restructured corpus is in progress.** The two columns above are the PDF
-> corpus. The third number is not published until the same 20 questions have been run against
-> the section-based corpus and graded by the same strict rule.
 
 ---
 
@@ -143,6 +153,34 @@ belonging to a different party. Retrieval did its job; the drafter mixed two sec
 **That error was invisible before.** On the PDF corpus every fragment cited the same document
 title. Now the citation gives it away mid-sentence. **Metadata didn't fix the failure — it made
 it measurable.**
+
+**Two of the four remaining failures are wrong citations** — and they are not new failures, they
+are failures that used to be invisible. A citation pointing at a 115-page document can never be
+wrong. One pointing at `45 CFR 164.530` can, and that one is: the Security Rule safeguards live
+in §§ 164.308, 164.310 and 164.312.
+
+**The other two are rank dilution, and it was measured.** Asked to define *business associate*,
+the system returned an answer missing the core clause. Reading the retrieval step showed why:
+**only 3 of the 20 retrieved fragments came from § 160.103**, the section that defines the term.
+The other 17 came from § 164.504, § 164.502, § 164.410, § 164.314, § 160.310, § 160.402 and
+§ 162.923 — every one of them *mentioning* business associates, none *defining* them.
+
+The term appears throughout the regulation, so semantic search returned the topic and left three
+slots out of twenty to the one section that answers the question. **That is the textbook case for
+hybrid search and reranking**, both of which are in "what's next" below.
+
+**Two hypotheses died mid-run.** First: *"list questions fail, single-fact questions pass"* —
+killed by Q12, a four-tier penalty schedule answered completely. Second: *"it fails when the
+section is huge"* — killed by Q16, a perfect answer out of one of the largest sections. The third
+hypothesis, rank dilution by term popularity, fits all twenty cases and is **stated as a
+hypothesis**, to be tested by the reranking work, not announced as a conclusion.
+
+**And the methodological warning that outranks the score.** Question 14 was run twice under an
+identical configuration. The first run returned the five required elements **plus one belonging to
+§ 164.410**, a different obligation for a different party. The second returned the five clean.
+Nothing changed between them. **The model is not deterministic**, so this 80% carries two sources
+of noise — sampling and the model itself. A rigorous evaluation would run each question several
+times and average.
 
 ---
 

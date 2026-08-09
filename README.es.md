@@ -86,29 +86,38 @@ Para un cliente eso no es una nota al pie, es el servicio: **sus documentos tamb
 20 preguntas con la respuesta verificada a mano contra la fuente — 16 con respuesta conocida, y
 **4 preguntas de control cuya respuesta correcta es que el sistema diga que no sabe**.
 
-| | topK = 5 | topK = 20 |
-|---|---|---|
-| Completas y correctas | 7 | **11** |
-| Incompletas pero sin errores | 7 | 3 |
-| Con una cifra equivocada | 1 | 1 |
-| Falso negativo (se calló teniendo la respuesta) | 0 | **1** |
-| Preguntas de control superadas | **4 / 4** | **4 / 4** |
-| **Alucinaciones** | **0** | **0** |
-| **Puntaje estricto** | **11/20 — 55%** | **15/20 — 75%** |
+| | PDF, topK 5 | PDF, topK 20 | **Corpus por secciones** |
+|---|---|---|---|
+| Completas y correctas (de 16) | 7 | 11 | **12** |
+| Fallos (de 16) | 9 | 5 | **4** |
+| Falso negativo (se calló teniendo la respuesta) | 0 | **1** | **0** |
+| Preguntas de control superadas | **4 / 4** | **4 / 4** | **4 / 4** |
+| **Alucinaciones** | **0** | **0** | **0** |
+| **Puntaje estricto** | 11/20 — 55% | 15/20 — 75% | **16/20 — 80%** |
 
-**Esto se lee como comparación pareada, no como calidad absoluta.** Con n=20, un porcentaje suelto
-carga unos ±19 puntos de error; lo que las mismas 20 preguntas en dos configuraciones **sí**
-sostienen es la dirección y el tamaño del cambio, porque las preguntas difíciles lo son en las dos
-rondas.
+**Ese +5 no es un resultado.** Con n=20 el puntaje carga ±18 puntos, y 75→80 es **una sola
+pregunta**. Quien lo reporte como "mejoró a 80%" está reportando ruido.
 
-**Latencia**, sobre 23 ejecuciones: mediana 16 s · promedio 18 s · peor caso completado 262 s · un
-timeout a los 604 s.
+**Y la tercera columna se calificó con una vara más dura que las otras dos.** Esta ronda añadió
+*"una cita equivocada cuenta como fallo"* — una regla que antes ni siquiera era aplicable, porque
+en el corpus en PDF todas las respuestas citaban el nombre del documento entero. Con la vara vieja
+esta ronda da **18/20 — 90%**. Los dos números están en el archivo de evaluación; mover la vara en
+silencio habría sido la opción deshonesta.
+
+### Lo que el número no dice, y la comparación sí
+
+**Nada de lo que funcionaba dejó de funcionar.**
+
+| Subir el `topK` de 5 a 20 | arregló 4 · **rompió 1** |
+| Reestructurar el corpus | arregló 3, más recuperó la P14 que antes daba timeout · **rompió 0** |
+
+El cambio del `topK` fue un canje. Este no. **Ese es el hallazgo, no el porcentaje.**
+
+**Latencia**, sobre 23 ejecuciones del corpus en PDF: mediana 16 s · peor caso completado 262 s ·
+un timeout a los 604 s. En el corpus por secciones, la pregunta 1 respondió en 14 s y la 14 —que
+antes nunca terminaba— en 29 s.
 
 **Indexación:** 653 fragmentos en unos 9 minutos, en 4 vCPU sin GPU. Se paga una sola vez.
-
-> **La medición del corpus reestructurado está en curso.** Las dos columnas de arriba son del
-> corpus en PDF. El tercer número no se publica hasta correr las mismas 20 preguntas contra el
-> corpus por secciones y calificarlas con la misma regla estricta.
 
 ---
 
@@ -146,6 +155,36 @@ otra parte. La recuperación hizo su trabajo; el redactor mezcló dos secciones.
 **Ese error antes era invisible.** En el corpus en PDF todos los fragmentos citaban el mismo título
 de documento. Ahora la cita lo delata a mitad de frase. **Los metadatos no arreglaron el fallo: lo
 hicieron medible.**
+
+**Dos de los cuatro fallos que quedan son citas equivocadas** — y no son fallos nuevos, son fallos
+que antes eran invisibles. Una cita que apunta a un documento de 115 páginas nunca puede estar mal.
+Una que apunta a `45 CFR 164.530` sí puede, y lo está: las salvaguardas de la Security Rule viven
+en los §§ 164.308, 164.310 y 164.312.
+
+**Los otros dos son dilución de ranking, y se midió.** Preguntado por la definición de *business
+associate*, el sistema devolvió una respuesta a la que le faltaba la cláusula central. Leyendo el
+paso de recuperación se ve por qué: **solo 3 de los 20 fragmentos recuperados venían del
+§ 160.103**, la sección que define el término. Los otros 17 salieron de § 164.504, § 164.502,
+§ 164.410, § 164.314, § 160.310, § 160.402 y § 162.923 — todos **mencionan** business associates,
+ninguno los **define**.
+
+El término aparece por toda la norma, así que la búsqueda por significado trajo el tema entero y
+le dejó tres puestos de veinte a la única sección que contesta. **Ese es el caso de libro para
+búsqueda híbrida y reranking**, las dos cosas que están en "lo que sigue".
+
+**Dos hipótesis murieron a mitad de ronda.** La primera: *"las preguntas de lista fallan y las de
+dato puntual aciertan"* — la mató la P12, una tabla de cuatro niveles de multas respondida entera.
+La segunda: *"falla cuando la sección es enorme"* — la mató la P16, perfecta sobre una de las
+secciones más grandes. La tercera hipótesis, dilución por popularidad del término, encaja con los
+veinte casos y **queda escrita como hipótesis**, a probar con el reranking, no anunciada como
+conclusión.
+
+**Y el aviso metodológico que pesa más que el puntaje.** La pregunta 14 se corrió dos veces con
+una configuración idéntica. La primera devolvió los cinco elementos exigidos **más uno del
+§ 164.410**, que es otra obligación y de otra parte. La segunda devolvió los cinco limpios. Nada
+cambió entre las dos. **El modelo no es determinista**, así que este 80% carga dos ruidos: el de
+la muestra y el del propio modelo. Una evaluación rigurosa correría cada pregunta varias veces y
+promediaría.
 
 ---
 
