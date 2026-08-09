@@ -1,43 +1,49 @@
-# Evaluación del RAG — 20 preguntas
+# RAG evaluation — 20 questions
 
-**Documento evaluado:** `hipaa-simplification-201303.pdf` — HIPAA Administrative Simplification,
-Regulation Text, 45 CFR Partes 160, 162 y 164 (versión no oficial, con enmiendas hasta el
-**26 de marzo de 2013**). 577 fragmentos indexados en 8 min 8 s.
+> **Note on language.** The questions and the hand-verified answers below are **in Spanish on
+> purpose**: they are asked in Spanish against an English regulation, and whether the multilingual
+> embedding model bridges that gap is part of what this measures. Translating them would erase the
+> experiment. Everything else — method, criteria and results — is in English.
 
-**Modelo de embeddings:** BGE-M3 (1024 dimensiones), local en el servidor, sin GPU.
-**Modelo redactor:** `gpt-5-mini` vía API.
+**Rounds 1 and 2 — document under test:** `hipaa-simplification-201303.pdf` — HIPAA Administrative
+Simplification, 45 CFR Parts 160, 162 and 164 (unofficial version, amended through **26 March
+2013**). 577 fragments, indexed in 8 min 8 s.
 
----
+**Round 3 — same 20 questions, restructured corpus:** 148 sections pulled from the eCFR API,
+current as of 6 August 2026. 653 fragments. Details in that round's section below.
 
-## Cómo funciona esta evaluación
-
-Las respuestas correctas **salen del documento**, no del modelo ni de nadie de memoria. Si la
-vara de medir está mal, el número no vale nada.
-
-Las preguntas son de dos tipos:
-
-- **1 a 16 — tienen respuesta en el documento.** Miden si el sistema la encuentra y la cita bien.
-- **17 a 20 — NO tienen respuesta en el documento.** Miden si el sistema se calla. Debe responder
-  exactamente: *"No encontré eso en los documentos cargados."*
-
-**Las de control son la mitad que importa.** Un RAG que responde bien 16 de 16 pero se inventa
-las otras 4 no sirve para una clínica: nadie puede distinguir cuál de sus respuestas es real.
-
-⚠️ **La pregunta 19 es trampa doble:** no existe una "certificación HIPAA" oficial del gobierno
-de Estados Unidos. Es un producto que venden consultoras privadas. Si el modelo da un precio o
-un procedimiento, se lo inventó completo.
-
-**Las preguntas se hacen en español** aunque el documento esté en inglés. Eso también se está
-midiendo: si el modelo de embeddings multilingüe encuentra el fragmento correcto cruzando idiomas.
-
-**Regla de la ronda: una pregunta, una respuesta, se anota.** Nada de reformular hasta que
-acierte — en producción el cliente pregunta una vez y se queda con lo que salga.
+**Embedding model:** BGE-M3 (1024 dimensions), local on the server, no GPU.
+**Writing model:** `gpt-5-mini` via API.
 
 ---
 
-## Preguntas con respuesta en el documento
+## How this evaluation works
 
-| # | Pregunta | Buscar en | Respuesta correcta (del PDF) | Respuesta del RAG | ¿OK? |
+The correct answers **come out of the document** — not from the model, and not from anyone's
+memory. If the ruler is wrong, the number is worthless.
+
+Two kinds of question:
+
+- **1 to 16 — answerable from the document.** They measure whether the system finds the answer and
+  cites it correctly.
+- **17 to 20 — NOT answerable from the document.** They measure whether the system stays quiet. It
+  must reply exactly: *"No encontré eso en los documentos cargados."*
+
+**The control questions are the half that matters.** A RAG that gets 16 out of 16 right but invents
+the other 4 is useless to a clinic: nobody can tell which of its answers is real.
+
+⚠️ **Question 19 is a double trap:** there is no official US government "HIPAA certification". It is
+a product sold by private consultancies. If the model gives a price or a procedure, it made the
+whole thing up.
+
+**Round rule: one question, one answer, recorded.** No rephrasing until it gets it right — in
+production the customer asks once and lives with whatever comes back.
+
+---
+
+## Questions answerable from the document
+
+| # | Question *(Spanish)* | Section | Correct answer, verified by hand | RAG answer | OK? |
 |---|---|---|---|---|---|
 | 1 | ¿Qué plazo tiene una entidad para notificar a los individuos afectados por una brecha? | § 164.404 | Sin demora irrazonable, máximo 60 días calendario desde el descubrimiento |Sin demora indebida y, en ningún caso, más tarde de 60 días calendario después del descubrimiento de la brecha. Fuente: Combined Regulation Text of All Rules (HHS Office of Civil Rights) | |
 | 2 | ¿A partir de cuántos individuos afectados hay que notificar a los medios de comunicación? | § 164.406 | Más de 500 residentes de un estado o jurisdicción |A partir de 500 individuos.
@@ -114,9 +120,9 @@ Usos o divulgaciones hechas al individuo, según lo permitido o requerido en los
 Usos o divulgaciones efectuadas conforme a una autorización (§ 164.508).
 Divulgaciones realizadas al Secretario de conformidad con la subparte C del parte 160. | |
 
-## Preguntas de control — la respuesta correcta es que se calle
+## Control questions — the correct answer is silence
 
-| # | Pregunta | Respuesta esperada | Respuesta del RAG | ¿OK? |
+| # | Question *(Spanish)* | Expected answer | RAG answer | OK? |
 |---|---|---|---|---|
 | 17 | ¿Cuál es la multa máxima bajo el GDPR? | "No encontré eso en los documentos cargados." |No encontre eso en los documentos cargados. | |
 | 18 | ¿Qué dice esta norma sobre el uso de inteligencia artificial o modelos de lenguaje? | "No encontré eso en los documentos cargados." |No encontre eso en los documentos cargados. | |
@@ -125,282 +131,289 @@ Divulgaciones realizadas al Secretario de conformidad con la subparte C del part
 
 ---
 
-## Resultado
+## Result — rounds 1 and 2
 
-**Criterio de calificación, fijado antes de contar:** una respuesta cuenta como acierto si un
-administrador de clínica puede actuar con ella sin equivocarse. Incompleta ≠ incorrecta, pero
-tampoco es acierto: se cuenta aparte.
+**Grading rule, fixed before counting:** an answer counts as correct if a practice administrator
+could act on it without getting it wrong. Incomplete ≠ incorrect, but it isn't a hit either — it's
+counted separately.
 
-| Métrica | Valor |
+| | Value |
 |---|---|
-| ✅ Completas y correctas (de 16) | **7** — preguntas 1, 3, 4, 5, 6, 8, 10 |
-| ⚠️ Correctas pero incompletas (de 16) | **7** — preguntas 7, 9, 11, 12, 13, 15, 16 |
-| ❌ Con dato erróneo | **1** — pregunta 2 |
-| ❌ No respondió (fallo del sistema) | **1** — pregunta 14 |
-| ✅ Preguntas de control (de 4) | **4 de 4** |
-| **Respuestas inventadas** | **0** |
+| ✅ Complete and correct (of 16) | **7** — questions 1, 3, 4, 5, 6, 8, 10 |
+| ⚠️ Correct but incomplete (of 16) | **7** — questions 7, 9, 11, 12, 13, 15, 16 |
+| ❌ Contained a wrong figure | **1** — question 2 |
+| ❌ No answer at all (system failure) | **1** — question 14 |
+| ✅ Control questions (of 4) | **4 of 4** |
+| **Invented answers** | **0** |
 
-**Dos números, según qué tan estricto seas:**
+**Two numbers, depending on how strict you are:**
 
-| Criterio | Resultado |
+| Criterion | Result |
 |---|---|
-| Estricto (solo respuestas completas) | **11 / 20 — 55%** |
-| Permisivo (completas + incompletas sin error) | **18 / 20 — 90%** |
+| Strict (complete answers only) | **11 / 20 — 55%** |
+| Lenient (complete + incomplete but not wrong) | **18 / 20 — 90%** |
 
-Esa distancia entre 55% y 90% **es el hallazgo**, no un problema del método: el sistema casi
-nunca miente, pero muy seguido se queda corto. Para una clínica, una respuesta a medias que
-suena completa es más peligrosa que uno que dice "no sé".
+That gap between 55% and 90% **is the finding**, not a flaw in the method: the system almost never
+lies, but it very often falls short. For a clinic, a half-answer that sounds complete is more
+dangerous than one that says "I don't know".
 
-### Lo que salió bien
+### What went right
 
-**Cero alucinaciones en 20 preguntas.** Las 4 de control respondieron exactamente *"No encontré
-eso en los documentos cargados"*, incluida la trampa de la certificación HIPAA que no existe.
-Ninguna respuesta de las otras 16 afirma algo falso — las que fallan, fallan por omisión.
+**Zero hallucinations across 20 questions.** All 4 controls replied with exactly *"No encontré eso
+en los documentos cargados"*, including the trap about the HIPAA certification that doesn't exist.
+None of the other 16 answers asserts anything false — the ones that fail, fail by omission.
 
-**Cruce de idiomas confirmado.** Todas las preguntas se hicieron en español sobre un documento
-en inglés. La recuperación funcionó en los 20 casos: BGE-M3 multilingüe cumple.
+**Cross-language retrieval confirmed.** Every question was asked in Spanish against an English
+document. Retrieval worked in all 20 cases: multilingual BGE-M3 delivers.
 
-### El error de la pregunta 2 — el más sutil de todos
+### Question 2 — the subtlest error of all
 
-El RAG resumió *"a partir de 500 individuos"*, pero la cita textual que él mismo trae dice
-**"more than 500 residents of a State or jurisdiction"**.
+The RAG summarised it as *"a partir de 500 individuos"* ("from 500 individuals"), while the verbatim
+text it had itself retrieved says **"more than 500 residents of a State or jurisdiction"**.
 
-*Más de 500* excluye el caso de exactamente 500. *A partir de 500* lo incluye. Una brecha de
-exactamente 500 personas **no** obliga a avisar a los medios, y el resumen dice que sí.
+*More than 500* excludes exactly 500. *From 500* includes it. A breach affecting exactly 500 people
+does **not** require media notification, and the summary says it does.
 
-El sistema recuperó el texto correcto y se equivocó al resumirlo. Ese es el tipo de error que
-nadie detecta leyendo la respuesta, solo comparándola con la fuente — que es exactamente para
-lo que existe esta evaluación.
+The system retrieved the right text and got the summary wrong. That is the class of error nobody
+catches by reading the answer — only by comparing it against the source, which is precisely why
+this evaluation exists.
 
-### Las 7 incompletas tienen una sola causa
+### The 7 incomplete ones share a single cause
 
-| # | Qué faltó |
+| # | What was missing |
 |---|---|
-| 7 | Las exclusiones y la presunción de brecha (dio solo la definición) |
-| 9 | La prórroga de 30 días |
-| 11 | Que el individuo puede pedir un período menor |
-| 12 | El cuarto nivel de multa — negligencia deliberada **no** corregida, el más grave |
-| 13 | Los factores (d) y (e) de cinco |
-| 15 | Cuatro de los ocho elementos, incluido el encabezado literal obligatorio |
-| 16 | Dos de los seis casos |
+| 7 | The exclusions and the breach presumption (gave only the definition) |
+| 9 | The 30-day extension |
+| 11 | That the individual may request a shorter period |
+| 12 | The fourth penalty tier — willful neglect **not** corrected, the most severe one |
+| 13 | Factors (d) and (e) out of five |
+| 15 | Four of the eight elements, including the mandatory verbatim header |
+| 16 | Two of the six cases |
 
-**Todas son listas cortadas.** El sistema encuentra dónde empieza la enumeración y entrega los
-primeros elementos. Es el mismo fallo diagnosticado en la pregunta 14, solo que ahí el corte fue
-tan temprano que el agente ni pudo responder.
+**All of them are truncated lists.** The system finds where the enumeration starts and delivers the
+first items. It's the same failure diagnosed in question 14, except there the cut came so early the
+agent couldn't answer at all.
 
-**No es el modelo: es el chunking.** Fragmentos de 1000 caracteres parten las listas largas, y
-ninguna búsqueda recupera lo que quedó separado de su encabezado.
+**It isn't the model: it's the chunking.** Fragments of 1000 characters split the long lists, and no
+search recovers what got separated from its heading.
 
-### Latencia y fiabilidad medidas
+> **Written at the end of round 2, and only half right.** Round 3 showed the missing fragments
+> *existed* — they were ranked below the cutoff. Chunking was part of it; ranking was the rest. The
+> paragraph is left as written because how the diagnosis evolved is worth more than a tidy one.
 
-| Métrica | Valor |
+### Measured latency and reliability
+
+| | Value |
 |---|---|
-| Mediana | 16 s |
-| Promedio | 18 s |
-| Peor caso completado | 262 s |
-| Fallo por timeout | 604 s |
-| Consultas que fallaron y hubo que repetir | 3 de 23 |
+| Median | 16 s |
+| Mean | 18 s |
+| Worst completed | 262 s |
+| Timeout failure | 604 s |
+| Queries that failed and had to be repeated | 3 of 23 |
 
-### Las tres correcciones que salen de esto
+### The three fixes that come out of this
 
-1. **`chunkSize` de 1000 → 2000, o partición semántica.** Ataca la causa de las 7 incompletas y
-   del fallo de la 14. Obliga a reindexar los 577 fragmentos (~8 min).
-2. **`reasoning_effort: low`.** Responder con fragmentos ya recuperados no es una tarea de
-   razonamiento; el modelo estaba pensando un problema ya resuelto.
-3. **Timeout de 30–60 s con mensaje al usuario.** Hoy el corte está en 604 s, que para un chat
-   equivale a no tener ninguno.
+1. **`chunkSize` 1000 → 2000, or semantic splitting.** Attacks the cause of the 7 incompletes and
+   of question 14's failure. Requires reindexing all 577 fragments (~8 min).
+2. **`reasoning_effort: low`.** Answering from already-retrieved fragments is not a reasoning task;
+   the model was thinking about a problem retrieval had already solved.
+3. **A 30–60 s timeout with a message to the user.** The current cutoff is 604 s, which in a chat is
+   the same as having none.
 
-**El antes y el después de aplicar la nº 1 sobre estas mismas 20 preguntas es la medición que
-hace que este proyecto valga.**
+**The before and after of applying #1 to these same 20 questions is the measurement that makes this
+project worth anything.**
+
+> **What actually happened:** fix #1 was never applied. Research showed chunk size is the wrong
+> lever, and the real problem turned out to be the input format — the corpus was rebuilt from the
+> eCFR API instead. See round 3.
 
 ---
 
-## Preguntas a vigilar — las que tienen trampa adentro
+## Questions to watch — the ones with a trap inside
 
-Anotadas antes de medir, para no racionalizar después.
+Written down **before** measuring, so the results couldn't be rationalised afterwards.
 
-- **La 3** tiene **dos casos** (≥500 y <500). Lo más probable es que responda solo el primero. Eso
-  no es una respuesta equivocada: es una **incompleta que parece completa**, y deja a un
-  administrador creyendo que no debe reportar nada cuando tiene una obligación anual pendiente.
-- **La 5** no es "6 años" a secas. El *"la que sea posterior"* cambia la cuenta: una política
-  vigente diez años se guarda 6 años **desde que dejó de usarse**.
-- **La 7** tiene tres capas: definición, exclusiones y presunción. La que importa es la tercera —
-  invierte la carga de la prueba.
-- **La 9 contra la 10.** Acceso son 30 días, enmienda son 60. Dos derechos parecidos con plazos
-  distintos: si los confunde, es que recuperó el fragmento equivocado, y la respuesta errada se
-  ve igual de segura que la correcta.
-- **La 11** son 6 años **de un subconjunto**: tratamiento, pago y operaciones están excluidos.
-- **La 15** es el mejor detector de alucinación de las 16: el encabezado es **texto literal
-  obligatorio**. Un modelo que responda de memoria lo va a parafrasear.
-
----
-
-## Nota sobre la vigencia del corpus
-
-Este texto tiene enmiendas **hasta marzo de 2013**. Los montos de multa de § 160.404 se ajustan
-por inflación cada año, así que las cifras que responda el sistema son las de 2013 y no las
-vigentes hoy.
-
-**Eso no es un fallo del RAG: es un fallo del corpus.** Y es justo la limitación que hay que
-decirle a un cliente antes de que la descubra solo — un RAG es tan actual como los documentos
-que le cargaron, y mantenerlos al día es parte del servicio, no un extra.
-
-**Consecuencia práctica:** las respuestas de la pregunta 12 no se cuentan como fallo del sistema
-si coinciden con el documento. Se anotan aquí.
+- **Q3** has **two cases** (≥500 and <500). It will most likely answer only the first. That isn't a
+  wrong answer: it's an **incomplete one that looks complete**, and it leaves an administrator
+  believing they have nothing to report when they have a pending annual obligation.
+- **Q5** is not plain "6 years". The *"whichever is later"* changes the count: a policy in force for
+  ten years is kept for 6 years **from when it stopped being used**.
+- **Q7** has three layers: definition, exclusions, presumption. The one that matters is the third —
+  it reverses the burden of proof.
+- **Q9 against Q10.** Access is 30 days, amendment is 60. Two similar rights with different
+  deadlines: if it confuses them, it retrieved the wrong fragment — and the wrong answer looks
+  exactly as confident as the right one.
+- **Q11** is 6 years **of a subset**: treatment, payment and operations are excluded.
+- **Q15** is the best hallucination detector of the 16: the header is **mandatory verbatim text**. A
+  model answering from memory will paraphrase it.
 
 ---
 
-# Ronda 3 — corpus por secciones (9 de agosto de 2026)
+## Note on corpus currency
 
-**Qué cambió respecto de las dos rondas anteriores:** una sola variable, el corpus.
+This text is amended **through March 2013**. The civil penalty amounts in § 160.404 are adjusted
+for inflation annually, so the figures the system reports are the 2013 ones, not the current ones.
 
-| | Rondas 1 y 2 | Ronda 3 |
+**That is not a RAG failure: it is a corpus failure.** And it is exactly the limitation to tell a
+client before they find it on their own — a RAG is only as current as the documents loaded into it,
+and keeping them up to date is part of the service, not an extra.
+
+**Practical consequence:** question 12's answers are not counted as a system failure when they match
+the document. They are noted here.
+
+> **Resolved in round 3.** The corpus was rebuilt from the eCFR API, which reports its own effective
+> date. Verified afterwards: the § 160.404 amounts are unchanged in the 2026 text — but the section
+> now points to 45 CFR Part 102 for the inflation-adjusted figures, and Part 102 is not loaded. The
+> limitation moved rather than disappearing.
+
+---
+
+# Round 3 — section-based corpus (9 August 2026)
+
+**What changed against the previous two rounds:** one variable, the corpus.
+
+| | Rounds 1 and 2 | Round 3 |
 |---|---|---|
-| Fuente | PDF de marzo 2013, 115 páginas | API del eCFR, vigente al 6 ago 2026 |
-| Unidad | 577 fragmentos cortados cada 1000 caracteres | 653 fragmentos, **ninguno cruza de sección** |
-| Metadatos | ninguno útil | `seccion`, `citation`, `source`, `retrieved` en cada uno |
+| Source | March 2013 PDF, 115 pages | eCFR API, current as of 6 Aug 2026 |
+| Unit | 577 fragments cut every 1000 characters | 653 fragments, **none crosses a section boundary** |
+| Metadata | nothing usable | `seccion`, `citation`, `source`, `retrieved` on every one |
 
-`topK` sigue en 20, el prompt sin tocar y el modelo sin tocar, **a propósito**: si se cambia más
-de una cosa, el número no dice cuál la movió.
+`topK` stays at 20, the prompt untouched and the model untouched, **deliberately**: change more than
+one thing and the number can't tell you which one moved it.
 
-**Antes de contar, dos criterios fijados:**
+**Two criteria fixed before counting:**
 
-1. **Una cita equivocada cuenta como fallo.** El prompt ordena citar, y para lo que se quiere
-   vender una cita que no verifica es peor que no citar: quien la abra y no encuentre nada deja
-   de confiar en las otras diecinueve respuestas.
-2. **Mezclar contenido de otra sección cuenta como fallo**, aunque el texto exista y esté bien
-   citado. Categoría propia: *"completa con elemento ajeno"*.
+1. **A wrong citation counts as a failure.** The prompt orders the model to cite, and for what this
+   is meant to sell, a citation that doesn't check out is worse than no citation: whoever opens it
+   and finds nothing stops trusting the other nineteen answers.
+2. **Mixing in content from another section counts as a failure**, even when the text exists and is
+   correctly cited. Its own category: *"complete, with a foreign element"*.
 
-## Resultados
+## Per-question verdicts
 
-| # | Sección | Veredicto | Nota |
+| # | Section | Verdict | Note |
 |---|---|---|---|
-| 1 | § 164.404 | ✅ | Correcta. Primera vez que cita la sección exacta y no el nombre del PDF |
-| 2 | § 164.406 | ✅ | **Arreglada.** Ayer dijo "a partir de 500"; hoy "más de 500" |
-| 3 | § 164.408 | ✅ | Los dos casos completos. Ayer metía una frase del § 164.404; hoy no |
-| 4 | § 164.410 | ✅ | Mismo plazo y casi el mismo texto que la 1, en otra sección. No las cruzó |
-| 5 | § 164.316 | ✅ | Con el matiz "lo que ocurra después" |
-| 6 | § 160.103 | ❌ | **Incompleta.** Falta el `(1)(i)`, la definición núcleo — ver diagnóstico abajo |
-| 7 | § 164.402 | ❌ | **Incompleta.** Solo la definición base: faltan las 3 exclusiones y los 4 factores |
-| 8 | § 164.308/310/312 | ❌ | **Contenido correcto, cita equivocada:** citó § 164.530 y § 164.304 |
-| 9 | § 164.524 | ✅ | **Arreglada.** Ayer solo "30 días"; hoy con extensión, aviso y fecha |
-| 10 | § 164.526 | ✅ | 60 días, extensión y aviso. Sin cruzarla con la 9 |
-| 11 | § 164.528 | ✅ | Con el matiz del período menor a petición del individuo |
-| 12 | § 160.404 | ✅ | Los cuatro niveles con cifras, más el caso previo a feb-2009 |
-| 13 | § 160.408 | ✅ | Los cinco factores con sus ejemplos |
-| 14 | § 164.404 | ✅ | Los cinco elementos + lenguaje sencillo. **Ayer no respondió (timeout a 604 s)** |
-| 15 | § 164.520 | ❌ | Cita los derechos en `(b)(1)(v)` cuando son `(iv)`, y clasifica el `(b)(1)(iii)` —obligatorio— como opcional |
-| 16 | § 164.502 | ✅ | Los seis casos exactos. **Era el único falso negativo de la ronda 2** |
-| 17 | control | ✅ | Frase exacta |
-| 18 | control | ✅ | Frase exacta |
-| 19 | control | ✅ | La trampa de la certificación que no existe |
-| 20 | control | ✅ | Frase exacta |
+| 1 | § 164.404 | ✅ | Correct. First time it cites the exact section instead of the PDF's name |
+| 2 | § 164.406 | ✅ | **Fixed.** Round 2 said "from 500"; now "more than 500" |
+| 3 | § 164.408 | ✅ | Both cases complete. Round 2 pulled in a sentence from § 164.404; this one doesn't |
+| 4 | § 164.410 | ✅ | Same deadline and near-identical wording to Q1, in a different section. Didn't cross them |
+| 5 | § 164.316 | ✅ | Includes the "whichever is later" qualifier |
+| 6 | § 160.103 | ❌ | **Incomplete.** Missing `(1)(i)`, the core definition — see the diagnosis below |
+| 7 | § 164.402 | ❌ | **Incomplete.** Base definition only: missing the 3 exclusions and the 4 risk factors |
+| 8 | § 164.308/310/312 | ❌ | **Right content, wrong citation:** cited § 164.530 and § 164.304 |
+| 9 | § 164.524 | ✅ | **Fixed.** Round 2 gave only "30 days"; now with the extension, the notice and the date |
+| 10 | § 164.526 | ✅ | 60 days, extension and notice. Didn't cross it with Q9 |
+| 11 | § 164.528 | ✅ | Includes the shorter-period-on-request qualifier |
+| 12 | § 160.404 | ✅ | All four tiers with figures, plus the pre-Feb-2009 case |
+| 13 | § 160.408 | ✅ | All five factors with their examples |
+| 14 | § 164.404 | ✅ | The five elements + plain language. **Round 2 never answered it (604 s timeout)** |
+| 15 | § 164.520 | ❌ | Cites individual rights as `(b)(1)(v)` when they are `(iv)`, and files `(b)(1)(iii)` — mandatory — under optional |
+| 16 | § 164.502 | ✅ | All six cases exactly. **This was round 2's only false negative** |
+| 17 | control | ✅ | Exact phrase |
+| 18 | control | ✅ | Exact phrase |
+| 19 | control | ✅ | The trap about the certification that doesn't exist |
+| 20 | control | ✅ | Exact phrase |
 
-## Resultado
+## Result — round 3
 
-| | topK 5 | topK 20 | **Corpus por secciones** |
+| | PDF, topK 5 | PDF, topK 20 | **Section corpus** |
 |---|---|---|---|
-| Correctas y completas (de 16) | 7 | 11 | **12** |
-| Fallos (de 16) | 9 | 5 | **4** |
-| Falsos negativos | 0 | **1** | **0** |
-| Control (de 4) | 4 | 4 | **4** |
-| **Alucinaciones** | **0** | **0** | **0** |
-| **Puntaje estricto** | 11/20 — 55% | 15/20 — 75% | **16/20 — 80%** |
+| Complete and correct (of 16) | 7 | 11 | **12** |
+| Failures (of 16) | 9 | 5 | **4** |
+| False negatives | 0 | **1** | **0** |
+| Control (of 4) | 4 | 4 | **4** |
+| **Hallucinations** | **0** | **0** | **0** |
+| **Strict score** | 11/20 — 55% | 15/20 — 75% | **16/20 — 80%** |
 
-### Lo que este número NO dice
+### What this number does NOT say
 
-**80% con n=20 carga ±18 puntos.** Pasar de 75% a 80% es **una sola pregunta de diferencia** y
-está dentro del ruido: no se puede afirmar mejora estadística con esta muestra.
+**80% with n=20 carries ±18 points.** Going from 75% to 80% is **one question of difference** and
+sits inside the noise. No statistical improvement can be claimed from this sample.
 
-**Y el criterio de esta ronda fue más estricto que el de las anteriores.** Se añadió *"una cita
-equivocada cuenta como fallo"*, algo que en las rondas 1 y 2 ni siquiera era evaluable —todas las
-respuestas citaban el nombre del PDF entero, así que no había cita que verificar—. Con el
-criterio viejo, las preguntas 8 y 15 habrían pasado y el resultado sería **18/20 — 90%**.
+**And this round was graded more harshly than the previous two.** It added *"a wrong citation counts
+as a failure"* — a rule that wasn't even applicable in rounds 1 and 2, because every answer cited
+the name of the whole PDF and there was no citation to check. Under the old rule, questions 8 and 15
+would have passed and the result would read **18/20 — 90%**.
 
-La vara se endureció porque ahora hay más que medir, no para inflar el número. Ambas cifras
-quedan escritas.
+The bar was raised because there is more to measure now, not to inflate the number. Both figures are
+written down.
 
-### Lo que sí dice, y no depende del porcentaje
+### What it does say, and doesn't depend on the percentage
 
-**Ninguna respuesta que funcionaba dejó de funcionar.** Esa es la diferencia real con el cambio
-anterior:
+**Nothing that worked stopped working.** That is the real difference from the previous change:
 
-| Subir `topK` de 5 a 20 | arregló 4 · **rompió 1** |
-| Cambiar el corpus | arregló 3 (2, 9, 16) + recuperó la 14, que antes ni respondía · **rompió 0** |
+| Raising `topK` from 5 to 20 | fixed 4 · **broke 1** |
+| Changing the corpus | fixed 3 (Q2, Q9, Q16) + recovered Q14, which previously didn't answer at all · **broke 0** |
 
-El `topK` fue un canje. Este cambio no tuvo coste.
+The `topK` change was a trade. This one cost nothing.
 
-**Las citas pasaron de decorativas a verificables.** Antes: *"Combined Regulation Text of All
-Rules"* — el nombre del PDF de 115 páginas. Ahora: `45 CFR 164.404` con su URL. Eso no suma
-puntos y es lo que más importa para vendérselo a una clínica.
+**Citations went from decorative to verifiable.** Before: *"Combined Regulation Text of All Rules"* —
+the name of a 115-page PDF. Now: `45 CFR 164.404` with its URL. That adds no points, and it is what
+matters most for selling this to a clinic.
 
-**Y por eso mismo aparecieron dos fallos nuevos** (8 y 15, citas equivocadas). No son fallos
-nuevos del sistema: son fallos que antes eran **invisibles**. Una cita que apunta al documento
-entero nunca puede estar mal.
+**And that is exactly why two new failures appeared** (Q8 and Q15, wrong citations). They are not
+new failures of the system: they are failures that used to be **invisible**. A citation pointing at
+the entire document can never be wrong.
 
-**Los cuatro fallos tienen causa identificada**, algo imposible en las rondas anteriores:
+**All four failures have an identified cause**, which was impossible in the previous rounds:
 
-- **6, 7, 15** — dilución de ranking. El término de la pregunta (*business associate*, *breach*,
-  *notice of privacy practices*) aparece en muchas secciones, y los fragmentos de la que
-  **define** pierden puestos contra los diecisiete que solo **mencionan**. En la 6 se midió: 3 de
-  20 puestos para la sección correcta.
-- **8** — generación pura. Las tres categorías eran correctas; las citas, inventadas.
+- **Q6, Q7, Q15** — rank dilution. The term in the question (*business associate*, *breach*, *notice
+  of privacy practices*) appears across many sections, and the fragments from the one that
+  **defines** it lose slots to the seventeen that only **mention** it. Measured on Q6: 3 slots out
+  of 20 for the right section.
+- **Q8** — pure generation. The three categories were right; the citations were invented.
 
-Los tres primeros los ataca el reranking y la búsqueda híbrida. El cuarto, el prompt.
+The first three are what reranking and hybrid search attack. The fourth is a prompt fix.
 
-### Dos hipótesis que los datos mataron durante la ronda
+### Diagnosing Q6 — by reading what was retrieved, not the answer
 
-1. *"Las preguntas de lista fallan; las de dato puntual aciertan."* — La 12 (cuatro niveles de
-   multas, completa) la desmintió.
-2. *"Falla cuando la sección es enorme."* — La 16 (§ 164.502, enorme, perfecta) la desmintió.
+This is the first failure that could be diagnosed by looking at the retrieved fragments
+(execution 298), something impossible in the earlier rounds.
 
-La tercera —dilución por popularidad del término— **no se anuncia como conclusión**: encaja con
-los 20 casos, y se pone a prueba con el reranking.
+**The fragment with the core definition never arrived.** Rank 1 ends exactly at
+*"...business associate means, with respect to a covered entity, **a person who:**"*, and rank 5
+starts at *"**(ii)** Provides... legal, actuarial..."*. Between them sits the missing `(1)(i)` —
+literally what the question asks for. **It exists in the database and fell below the cutoff.**
 
-### El aviso metodológico que vale más que el número
+**And the cause is right there:** of the 20 retrieved fragments, **only 3 came from § 160.103**. The
+other 17 came from § 164.504 (×5), § 164.502 (×4), § 164.410 (×3), § 164.314 (×2), § 160.310 (×2),
+§ 160.402 and § 162.923.
 
-La pregunta 14 se corrió **dos veces con la misma configuración**. La primera trajo los cinco
-elementos **más uno del § 164.410 que no pertenece**; la segunda, los cinco limpios. Nada cambió
-entre ambas.
+Every one of them talks **about** business associates; none **defines** them. The term appears
+throughout the regulation, so semantic search returned the whole topic and left three slots out of
+twenty to the only section that answers.
 
-**El modelo no es determinista.** Una sola ejecución por pregunta no es una medición estable, así
-que este 80% carga dos ruidos: el estadístico de la muestra y el del propio modelo. Una
-evaluación rigurosa correría cada pregunta varias veces y promediaría.
+**Textbook case for the two pending fixes:** hybrid search would find `160.103` as an exact string,
+and a reranker would lift the fragment that defines above the ones that merely mention.
 
-## Diagnóstico de la 6 — leyendo lo que se recuperó, no la respuesta
+### Two hypotheses the data killed mid-round
 
-Es el primer fallo que se pudo diagnosticar mirando los fragmentos recuperados (ejecución 298),
-algo imposible en las rondas anteriores.
+Both were written down as they formed, and both were wrong.
 
-**El fragmento con la definición núcleo no llegó.** El puesto 1 termina exactamente en
-*"...business associate means, with respect to a covered entity, **a person who:**"*, y el puesto 5
-empieza en *"**(ii)** Provides... legal, actuarial..."*. Entre los dos falta el `(1)(i)`, que es
-literalmente lo que la pregunta pide. **Existe en la base y quedó bajo el corte.**
+**First, after questions 6 and 7:** *"list questions fail, single-fact questions pass."* Q12 killed
+it — four penalty tiers with their figures, answered completely.
 
-**Y la causa está a la vista:** de los 20 fragmentos recuperados, **solo 3 son del § 160.103**.
-Los otros 17 salen de § 164.504 (×5), § 164.502 (×4), § 164.410 (×3), § 164.314 (×2),
-§ 160.310 (×2), § 160.402 y § 162.923.
+**Second, replacing it:** *"it fails when the section is huge."* That one fit better for a while:
 
-Todos hablan **de** business associates; ninguno los **define**. El término aparece por toda la
-norma, así que la búsqueda por significado trajo el tema entero y le dejó tres puestos de veinte
-a la única sección que contesta.
+| § 160.404 (penalties) | 48 lines | ✅ |
+| § 160.408 (factors) | short | ✅ |
+| § 160.103 (definitions) | dozens of definitions | ❌ |
+| § 164.402 (*breach*) | long, with exclusions and factors | ❌ |
 
-**Es el caso de libro para las dos cosas pendientes:** búsqueda híbrida encontraría `160.103` como
-cadena exacta, y un reranker pondría arriba el fragmento que define en vez de los que mencionan.
+**Q16 killed it too** — § 164.502 is one of the largest sections in the corpus and the answer came
+back perfect.
 
-## Una hipótesis que los datos mataron a mitad de ronda
+The third hypothesis — dilution by how popular the term is across the corpus — fits all twenty
+cases. **It is written here as a hypothesis, not announced as a conclusion**, and it gets tested by
+the reranking work. Two died already; the third doesn't get to skip the queue.
 
-Tras las preguntas 6 y 7 pareció que el patrón era *"las preguntas de lista fallan y las de dato
-puntual aciertan"*. **La 12 lo desmintió**: cuatro niveles de multas con sus cifras, completa.
+### The methodological warning that outranks the score
 
-Lo que separa a los fallos no es el formato de la respuesta sino **el tamaño de la sección**:
+Question 14 was run **twice under an identical configuration**. The first run returned the five
+elements **plus one from § 164.410 that doesn't belong**; the second returned the five clean.
+Nothing changed between them.
 
-| § 160.404 (multas) | 48 líneas | ✅ |
-| § 160.408 (factores) | corta | ✅ |
-| § 160.103 (definiciones) | decenas de definiciones | ❌ |
-| § 164.402 (*breach*) | larga, con exclusiones y factores | ❌ |
-
-Cuando la respuesta cabe en unos pocos fragmentos vecinos de una sección corta, llega entera.
-Cuando la sección es enorme, sus fragmentos compiten entre sí **y con los de todas las demás
-secciones que tocan el tema** por veinte puestos, y se cae la mitad.
+**The model is not deterministic.** One run per question is not a stable measurement, so this 80%
+carries two sources of noise: the sampling one and the model's own. A rigorous evaluation would run
+each question several times and average.
 
