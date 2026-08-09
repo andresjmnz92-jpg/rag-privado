@@ -349,6 +349,7 @@ corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de 
 workflows/cargar-secciones.json El workflow de indexación. Se importa en n8n.
 workflows/preguntar.json        El workflow de consulta: agente, recuperador y embeddings locales.
 workflows/system-prompt.md      Las cinco reglas del prompt, y qué se midió que hace cada una
+sql/busqueda-hibrida.sql        La recuperación híbrida en una sentencia, con el porqué de cada decisión
 evaluacion/preguntas.md         Las 20 preguntas, las respuestas verificadas a mano y las tres rondas
 evaluacion/investigacion-*      La investigación con fuentes detrás de las decisiones
 ```

@@ -342,6 +342,7 @@ corpus/cargar-en-n8n.ps1        Posts each section to an authenticated n8n webho
 workflows/cargar-secciones.json The ingestion workflow. Import into n8n.
 workflows/preguntar.json        The query workflow: agent, retriever and local embeddings.
 workflows/system-prompt.md      The five prompt rules, and what each one was measured to do
+sql/busqueda-hibrida.sql        Hybrid retrieval in one statement, with why each choice was made
 evaluacion/preguntas.md         The 20 questions, hand-verified answers, and all three rounds
 evaluacion/investigacion-*      Sourced research behind the chunking and production decisions
 ```
