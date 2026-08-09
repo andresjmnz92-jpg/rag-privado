@@ -64,6 +64,38 @@ auditable; uno que improvisa es un riesgo legal.
 
 ---
 
+## La forma
+
+```
+INDEXAR — se paga una vez, ~9 min en 4 vCPU sin GPU
+
+  API del eCFR ──→ 148 archivos Markdown ──→ un POST por sección ──→ n8n
+   3 llamadas          uno por §              webhook autenticado       │
+                                                                        │
+                                       partir 1000 / 150 de solape ─────┤
+                                    embeddings BGE-M3, en local ────────┤
+                                                                        ↓
+                                                PostgreSQL + pgvector
+                                                653 fragmentos, cada uno con
+                                                su §, su cita oficial y la
+                                                fecha en que se descargó
+
+
+PREGUNTAR — mediana 16 s
+
+  pregunta en español ──→ BGE-M3 ──→ 20 fragmentos más cercanos ──→ gpt-5-mini
+   contra texto inglés   mismo modelo      desde pgvector             redacta
+                         que al indexar                                  │
+                                                                         │
+                            respuesta + cita verificable ────────────────┤
+                     o "No encontré eso en los documentos cargados" ─────┘
+```
+
+**Nada cruza la frontera del medio.** El documento se convierte en vectores en la misma máquina que
+los guarda; solo los 20 fragmentos recuperados salen del servidor.
+
+---
+
 ## Cómo se corre
 
 ```bash
@@ -73,8 +105,9 @@ docker compose exec ollama ollama pull bge-m3         # modelo de embeddings, 1.
 pwsh corpus/descargar-corpus.ps1                      # 3 llamadas a la API → 148 archivos .md
 ```
 
-Después se importan los dos workflows en n8n, se les asignan las credenciales de Postgres y Ollama,
-y se carga:
+Se importan los dos workflows de [`workflows/`](workflows/) en n8n. Cada nodo lleva una nota que
+explica qué hace y por qué, y todo campo que haya que cambiar está marcado con `>>> REPLACE`: tres
+credenciales (Postgres, Ollama, header auth) y nada más.
 
 ```powershell
 $env:RAG_N8N   = "https://tu-n8n.ejemplo.com"
@@ -280,9 +313,20 @@ Van escritos porque un resultado sin sus límites no es un resultado.
 docker-compose.yml              Postgres con pgvector y Ollama, sin puertos publicados
 corpus/descargar-corpus.ps1     Baja 45 CFR 160/162/164 de la API del eCFR → un .md por sección
 corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de n8n para indexarla
+workflows/cargar-secciones.json El workflow de indexación. Se importa en n8n.
+workflows/preguntar.json        El workflow de consulta: agente, recuperador y embeddings locales.
+workflows/system-prompt.md      Las cinco reglas del prompt, y qué se midió que hace cada una
 evaluacion/preguntas.md         Las 20 preguntas, las respuestas verificadas a mano y las tres rondas
 evaluacion/investigacion-*      La investigación con fuentes detrás de las decisiones
 ```
+
+Los dos archivos de workflow no llevan credenciales — solo los campos que hay que rellenar, marcados
+con `>>> REPLACE`. Los nombres de los nodos están en español porque soy yo quien los lee a las 3 de
+la mañana cuando algo se para.
+
+**`system-prompt.md` vale abrirlo aunque nunca corras esto.** Son cinco reglas, y lo que importa es
+la medición pegada a cada una: cuál produjo cero alucinaciones en sesenta respuestas, cuál no hizo
+nada durante dos rondas, y **cuál falló a la vista**.
 
 El corpus no se versiona: `descargar-corpus.ps1` lo regenera en unos diez segundos, y estaría
 desactualizado desde el momento en que se subiera.

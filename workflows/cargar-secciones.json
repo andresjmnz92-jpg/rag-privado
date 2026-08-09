@@ -1,0 +1,109 @@
+{
+  "name": "RAG - Cargar Secciones (API)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-cargar-seccion",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "noData",
+        "options": {}
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000001",
+      "name": "Recibir Seccion",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300],
+      "notes": ">>> REPLACE: attach a Header Auth credential. The script sends the token in X-Carga-Token. responseMode is 'lastNode' on purpose: the webhook answers when indexing FINISHES, so the loading script becomes genuinely sequential and never has two sections vectorising at once."
+    },
+    {
+      "parameters": {
+        "model": "bge-m3:latest"
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000002",
+      "name": "Embeddings Locales",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [480, 520],
+      "notes": ">>> REPLACE: attach an Ollama credential pointing at your instance. This model must be IDENTICAL to the one used at query time — changing it invalidates every vector already stored."
+    },
+    {
+      "parameters": {
+        "chunkOverlap": 150,
+        "options": {}
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000003",
+      "name": "Partir en Fragmentos",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [700, 700],
+      "notes": "chunkSize stays at the default 1000. Research said size is the wrong lever — where you cut is what matters, and that is already solved upstream: each call carries exactly one section, so no fragment can cross a section boundary."
+    },
+    {
+      "parameters": {
+        "dataType": "json",
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.body.texto }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              { "name": "seccion", "value": "={{ $json.body.seccion }}" },
+              { "name": "citation", "value": "={{ $json.body.citation }}" },
+              { "name": "source", "value": "={{ $json.body.source }}" },
+              { "name": "retrieved", "value": "={{ $json.body.retrieved }}" }
+            ]
+          }
+        }
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000004",
+      "name": "Leer Seccion",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [700, 520],
+      "notes": "This metadata list is FIXED for everything that enters in one call — and that is exactly why the design works. One call carries one section, so all its fragments legitimately share the same §. Trying to tag fragment-by-fragment inside a single large document is what this node cannot do."
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": "documentos_v2",
+        "options": {}
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000005",
+      "name": "Guardar en PGVector",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [560, 300],
+      "notes": ">>> REPLACE: attach a Postgres credential. The table is created if it does not exist. Note it is a NEW table rather than the original one — a corpus rebuilt from a different source does not belong in the same table as the old one, or the comparison between them stops being possible."
+    },
+    {
+      "parameters": {
+        "content": "## Load by API, one section per call\n\nEach POST carries ONE section with its § already attached. That is why the loader's fixed metadata is correct here: every fragment from this call belongs to the same section.\n\nThe webhook requires the X-Carga-Token header. Without it, 403 and nothing runs.",
+        "height": 220,
+        "width": 560,
+        "color": 4
+      },
+      "id": "3f1c9a20-0000-4000-8000-000000000006",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 40]
+    }
+  ],
+  "connections": {
+    "Recibir Seccion": {
+      "main": [[{ "node": "Guardar en PGVector", "type": "main", "index": 0 }]]
+    },
+    "Embeddings Locales": {
+      "ai_embedding": [[{ "node": "Guardar en PGVector", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Leer Seccion": {
+      "ai_document": [[{ "node": "Guardar en PGVector", "type": "ai_document", "index": 0 }]]
+    },
+    "Partir en Fragmentos": {
+      "ai_textSplitter": [[{ "node": "Leer Seccion", "type": "ai_textSplitter", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

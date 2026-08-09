@@ -63,6 +63,38 @@ that improvises is a liability.
 
 ---
 
+## The shape
+
+```
+INGEST — paid once, ~9 min on 4 vCPU with no GPU
+
+  eCFR API ──→ 148 Markdown files ──→ one POST per section ──→ n8n
+   3 calls        one per §            authenticated webhook      │
+                                                                  │
+                                        split 1000 / 150 overlap ─┤
+                                       BGE-M3 embeddings, local ──┤
+                                                                  ↓
+                                              PostgreSQL + pgvector
+                                              653 fragments, each carrying
+                                              its §, its official citation
+                                              and the date it was retrieved
+
+
+ASK — median 16 s
+
+  question in Spanish ──→ BGE-M3 ──→ 20 nearest fragments ──→ gpt-5-mini
+   against English text   same model    from pgvector           writes
+                          as ingest                                │
+                                                                   │
+                              answer + verifiable citation ────────┤
+                        or "No encontré eso en los documentos" ────┘
+```
+
+**Nothing crosses the boundary in the middle.** The document is turned into vectors on the same box
+that stores them; only the 20 retrieved fragments ever leave the server.
+
+---
+
 ## Run it
 
 ```bash
@@ -72,7 +104,9 @@ docker compose exec ollama ollama pull bge-m3         # embeddings model, 1.2 GB
 pwsh corpus/descargar-corpus.ps1                      # 3 API calls → 148 .md files
 ```
 
-Then import both workflows into n8n, attach the Postgres and Ollama credentials, and load:
+Import both workflows from [`workflows/`](workflows/) into n8n. Each node carries a note explaining
+what it does and why, and every field you have to change is marked `>>> REPLACE` — three
+credentials (Postgres, Ollama, header auth) and nothing else.
 
 ```powershell
 $env:RAG_N8N   = "https://your-n8n.example.com"
@@ -273,9 +307,19 @@ Stated because a result without its limits isn't a result.
 docker-compose.yml              Postgres + pgvector and Ollama, no published ports
 corpus/descargar-corpus.ps1     Pulls 45 CFR 160/162/164 from the eCFR API → one .md per section
 corpus/cargar-en-n8n.ps1        Posts each section to an authenticated n8n webhook for indexing
+workflows/cargar-secciones.json The ingestion workflow. Import into n8n.
+workflows/preguntar.json        The query workflow: agent, retriever and local embeddings.
+workflows/system-prompt.md      The five prompt rules, and what each one was measured to do
 evaluacion/preguntas.md         The 20 questions, hand-verified answers, and all three rounds
 evaluacion/investigacion-*      Sourced research behind the chunking and production decisions
 ```
+
+The two workflow files carry no credentials — only the fields you must fill, marked `>>> REPLACE`.
+Node names are in Spanish because I am the one reading them at 3am when something stops.
+
+**`system-prompt.md` is worth opening even if you never run this.** It's five rules, and what
+matters is the measurement attached to each: which one produced zero hallucinations across sixty
+answers, which one did nothing for two rounds, and **which one visibly failed**.
 
 The corpus itself is not versioned — `descargar-corpus.ps1` regenerates it in about ten seconds,
 and it would be stale the moment it was committed.
