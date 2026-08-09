@@ -279,7 +279,8 @@ Stated because a result without its limits isn't a result.
   `topK` fix does not scale.**
 - **Vector search only, no hybrid.** Embeddings match by meaning, not exact string — weak at finding
   a literal `164.404`. In Anthropic's measurement, adding BM25 dropped retrieval failure from 3.7%
-  to 2.9%.
+  to 2.9%. Read that number as a ceiling, not a forecast: **they used BM25 and this box cannot** —
+  see the correction in *What's next*.
 - **No vector index on the table** — only the primary key. Every search scans all 653 chunks.
 - **Two of twenty retrieved slots were section headings** — one line each. ~10% of context wasted.
 - **§ 160.404 points to 45 CFR Part 102 for inflation-adjusted penalties, and Part 102 is not in the
@@ -289,17 +290,46 @@ Stated because a result without its limits isn't a result.
 
 ## What's next
 
-1. **Reranking** — the one change that addresses both open failure types at once. `bge-reranker-v2-m3`
-   runs on the same Ollama instance. The cost is latency on CPU with no GPU, and **no source I found
-   gives a measured figure for that** — so it gets measured here.
-2. **Hybrid search (BM25 + vector)** with Reciprocal Rank Fusion — a GIN index over `tsvector`
-   alongside the vector one, no new infrastructure. **Weighted toward the lexical side**, following
+1. **Hybrid search (`ts_rank_cd` + vector) with Reciprocal Rank Fusion.** A GIN index over
+   `to_tsvector('english', text)` beside the vector one — no new service, no new container. Both
+   searches and the fusion fit in **one SQL statement**: that is the shape of
+   [pgvector's own example](https://github.com/pgvector/pgvector-python/blob/master/examples/hybrid_search/rrf.py),
+   two CTEs joined with `FULL OUTER JOIN` and scored `1.0 / (k + rank)` with `k = 60` — a constant
+   that comes from Cormack et al. (2009) and that the example's users recommend testing rather than
+   inheriting. Take 20 candidates from each side, fuse, return 10.
+
+   Optionally **weighted toward the lexical side**, following
    [ParadeDB](https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual): their
-   70/30 lexical split *"works well for technical documentation where users often search for
-   specific terms, function names, or error messages."* A corpus of `§ 164.404` and `(c)(1)(A)` is
-   exactly that — and it's the case where vector-only search is weakest.
-3. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
+   70/30 split *"works well for technical documentation where users often search for specific terms,
+   function names, or error messages."* A corpus of `§ 164.404` and `(c)(1)(A)` is exactly that, and
+   it is where vector-only search is weakest.
+
+   **Correction, 9 Aug:** this section previously said *BM25*. It was wrong. BM25 needs ParadeDB's
+   `pg_search` extension, which this image does not carry — what Postgres ships natively is
+   `ts_rank_cd`, which scores each document in isolation and has no corpus-wide term statistics.
+   ParadeDB argues that gap matters at scale. **Untested assumption:** at 653 fragments, where
+   `164.404` appears in two or three of them, the `@@` filter should do most of the work before
+   ranking matters. That is a guess, and the evaluation will say.
+
+   **A caveat this corpus forces:** the documents are English and the questions are Spanish. Lexical
+   search does not cross languages, so this fix should move the identifier questions and almost
+   nothing else. If it repairs 2 or 3 of the 20, it worked.
+
+2. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
    failure.
+
+3. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
+   once, but **Ollama cannot serve reranking models.** Verified 9 Aug: an Ollama maintainer states it
+   plainly in [issue #10467](https://github.com/ollama/ollama/issues/10467), closed as a duplicate of
+   [#3368](https://github.com/ollama/ollama/issues/3368), the feature request open since March 2024.
+   The trap worth naming: you *can* pull a reranker into Ollama and call `/api/embed`, and it returns
+   numbers — the embedding layer, not the classification head that does the ranking. **Plausible
+   output, silently wrong.** n8n's only reranker node is Cohere, which would send the retrieved
+   fragments off the machine and break the one promise this project makes. So this gets tested on a
+   GPU box, which is also the number a client with a GPU would actually get.
+
+   **Correction, 9 Aug:** this section previously said the reranker *"runs on the same Ollama
+   instance."* It does not. That line was written from assumption, not verification.
 
 ---
 
