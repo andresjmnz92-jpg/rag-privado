@@ -44,23 +44,25 @@ preguntas corrieron contra los dos.
 
 ## Qué responde de verdad
 
-Las preguntas se hacen **en español** contra una norma **en inglés** — ese cruce de idiomas es
-parte de lo que se está midiendo.
+![Dos preguntas en una sesión: la primera devuelve seis casos con su cita, la segunda se niega porque el GDPR no está en el corpus](chat-example.png)
 
-> **P:** ¿Qué plazo tiene una entidad para notificar a los individuos afectados por una brecha?
->
-> **R:** Una entidad debe notificar a los individuos "sin demora injustificada y en ningún caso más
-> tarde de 60 días calendario después del descubrimiento de la brecha." **(45 CFR 164.404)**
+Dos preguntas, una sesión, nada montado.
 
-Y la mitad que importa más — una pregunta de control, por el precio de la certificación oficial de
-HIPAA, **que no existe**:
+**La primera** pregunta en español en qué casos no aplica el estándar de *minimum necessary*, contra
+una norma en inglés. Vuelve con los seis casos y la cita — `45 CFR 164.502` — que es una sección que
+cualquiera puede abrir y comprobar.
 
-> **P:** ¿Cuánto cuesta obtener la certificación oficial HIPAA?
->
-> **R:** No encontré eso en los documentos cargados.
+**La segunda** pregunta por la multa máxima del GDPR. El GDPR no está en este corpus. La respuesta
+es la frase exacta de rechazo, y **esa es la mitad que compra una clínica**: un sistema que se calla
+es auditable; uno que improvisa es un riesgo legal.
 
-Para un comprador del sector salud, esa segunda es el producto. Un sistema que se calla es
-auditable; uno que improvisa es un riesgo legal.
+**El panel de la derecha es lo que vale leer dos veces.** Enseña lo que el texto solo puede afirmar:
+
+| `Success in 17.729s` | Latencia real, en 4 vCPU sin GPU |
+| `~5811 Tokens` | Lo que cuesta una respuesta |
+| `20 items` entrando por la conexión Tool | Los 20 fragmentos que de verdad llegan al modelo |
+| `1024 items` en Embeddings | La firma de BGE-M3 — calculados en la misma máquina que los guarda |
+| El árbol de ejecución | Buscó **antes** de escribir. Esa es la regla 1 del prompt, cumplida |
 
 ---
 

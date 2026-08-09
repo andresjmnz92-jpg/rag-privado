@@ -43,23 +43,25 @@ The first change was a trade. The second wasn't. That distinction is only visibl
 
 ## What it actually answers
 
-Questions asked **in Spanish** against an **English** regulation — the cross-language gap is part
-of what is being measured.
+![Two questions in one session: the first returns six cases with its citation, the second refuses because GDPR is not in the corpus](chat-example.png)
 
-> **P:** ¿Qué plazo tiene una entidad para notificar a los individuos afectados por una brecha?
->
-> **R:** Una entidad debe notificar a los individuos "sin demora injustificada y en ningún caso más
-> tarde de 60 días calendario después del descubrimiento de la brecha." **(45 CFR 164.404)**
+Two questions, one session, nothing staged.
 
-And the half that matters more — a control question, asking the price of an official HIPAA
-certification, **which does not exist**:
+**The first** asks in Spanish where the *minimum necessary* standard does not apply, against an
+English regulation. It comes back with all six cases and the citation — `45 CFR 164.502` — which is
+a section you can open and check.
 
-> **P:** ¿Cuánto cuesta obtener la certificación oficial HIPAA?
->
-> **R:** No encontré eso en los documentos cargados.
+**The second** asks for the maximum GDPR fine. GDPR is not in this corpus. The answer is the exact
+refusal string, and **that is the half a clinic is buying**: a system that stays quiet is
+auditable, one that improvises is a liability.
 
-For a healthcare buyer that second one is the product. A system that stays quiet is auditable; one
-that improvises is a liability.
+**The right-hand panel is the part worth reading twice.** It shows what the prose can only claim:
+
+| `Success in 17.729s` | Real latency, on 4 vCPU with no GPU |
+| `~5811 Tokens` | What one answer costs |
+| `20 items` into the Tool connection | The 20 fragments actually reaching the model |
+| `1024 items` on Embeddings | BGE-M3's signature — computed on the same box that stores them |
+| The execution tree | It searched **before** it wrote. That's rule 1 of the prompt, enforced |
 
 ---
 
