@@ -312,10 +312,25 @@ Eight of sixteen questions ranked worse, one better, three fell out of the top 1
 and per-question table: [`evaluacion/preguntas.md`](evaluacion/preguntas.md), round 4. The query,
 with the verdict at the top: [`sql/busqueda-hibrida.sql`](sql/busqueda-hibrida.sql).
 
-**Why it failed here.** The documents are English and the questions are Spanish. Lexical search does
-not cross languages, so the lexical half contributes noise instead of signal — and it holds 70% of
-the weight. The caveat was written into this README before the measurement existed; the measurement
-turned it from a caveat into the headline.
+**Why it failed here, and what is still unproven about that.** The documents are English and the
+questions are Spanish. Lexical search does not cross languages, so the lexical half contributes
+noise instead of signal. That caveat was written into this README before the measurement existed,
+and the measurement turned it from a caveat into the headline.
+
+**But this configuration changes three things at once against plain vector search**, and the
+measurement cannot separate them:
+
+| Factor | This run | Why it could be the culprit on its own |
+|---|---|---|
+| Cross-language corpus | English docs, Spanish questions | The lexical half has nothing to match |
+| Weighting | **70% lexical**, 30% vector | The weaker half was given most of the vote |
+| Lexical engine | `ts_rank_cd`, not BM25 | It rewards repetition and knows nothing about corpus statistics ([limitations](#known-limitations)) |
+
+**So "hybrid search made this worse" is accurate; "hybrid search makes things worse" is not.**
+Hybrid retrieval is a family of configurations, and only one of them was measured here. Isolating
+the three would take one run per factor against the same fixed baseline — plain vector search at
+16/16 and MRR 0.865, which does not move when the weights do. Until that is run, the language
+explanation is the leading hypothesis, not an established cause.
 
 **What the same measurement showed about the four open failures.** Questions 6, 7, 8 and 15 failed
 in round 3. Their plain-vector ranks are **1, 1, 2 and 1** — the right section was already arriving

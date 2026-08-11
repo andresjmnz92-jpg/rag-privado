@@ -318,10 +318,25 @@ Ocho de dieciséis preguntas quedaron peor, una mejor, y tres se cayeron del top
 Método y tabla pregunta por pregunta: [`evaluacion/preguntas.md`](evaluacion/preguntas.md), ronda 4.
 La consulta, con el veredicto arriba del todo: [`sql/busqueda-hibrida.sql`](sql/busqueda-hibrida.sql).
 
-**Por qué falló aquí.** Los documentos están en inglés y las preguntas en español. La búsqueda por
-texto no cruza idiomas, así que la mitad léxica aporta ruido en vez de señal — y se lleva el 70% del
-peso. La advertencia estaba escrita en este mismo README antes de que existiera la medición; la
-medición la convirtió de nota al pie en titular.
+**Por qué falló aquí, y qué queda sin demostrar de esa explicación.** Los documentos están en inglés
+y las preguntas en español. La búsqueda por texto no cruza idiomas, así que la mitad léxica aporta
+ruido en vez de señal. La advertencia estaba escrita en este mismo README antes de que existiera la
+medición, y la medición la convirtió de nota al pie en titular.
+
+**Pero esta configuración cambia tres cosas a la vez** frente a la búsqueda vectorial pura, y la
+medición no las puede separar:
+
+| Factor | En esta corrida | Por qué podría ser el culpable él solo |
+|---|---|---|
+| Corpus con dos idiomas | Documentos en inglés, preguntas en español | La mitad léxica no tiene con qué emparejar |
+| Reparto del peso | **70% léxico**, 30% vectorial | Se le dio la mayoría del voto a la mitad más débil |
+| Motor léxico | `ts_rank_cd`, no BM25 | Premia la repetición y no sabe nada de las estadísticas del corpus |
+
+**Así que "la búsqueda híbrida empeoró esto" es exacto; "la búsqueda híbrida empeora las cosas" no
+lo es.** La recuperación híbrida es una familia de configuraciones y aquí se midió una sola.
+Aislar los tres factores serían tres corridas, una por factor, contra la misma referencia fija: la
+vectorial pura en 16/16 y MRR 0,865, que no se mueve cuando cambian los pesos. Hasta que eso se
+corra, la explicación del idioma es la hipótesis principal, no una causa demostrada.
 
 **Lo que la misma medición dijo de los cuatro fallos abiertos.** Las preguntas 6, 7, 8 y 15 fallaron
 en la ronda 3. Sus puestos en vectorial pura son **1, 1, 2 y 1** — la sección correcta ya llegaba
