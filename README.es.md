@@ -492,7 +492,7 @@ techo para este corpus.
 3. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
    generación — y la medición de arriba dice que la generación es donde viven los fallos que quedan.
 
-2. **Reranking, y no en esta máquina.** `bge-reranker-v2-m3` atacaría los dos tipos de fallo a la
+4. **Reranking, y no en esta máquina.** `bge-reranker-v2-m3` atacaría los dos tipos de fallo a la
    vez, pero **Ollama no puede servir modelos de reranking.** Verificado el 9 ago: un mantenedor de
    Ollama lo dice sin rodeos en el [issue #10467](https://github.com/ollama/ollama/issues/10467),
    cerrado como duplicado del [#3368](https://github.com/ollama/ollama/issues/3368), la petición de

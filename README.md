@@ -480,7 +480,7 @@ ceiling for this corpus.
 3. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
    failure — and the measurement above says generation is where the remaining failures live.
 
-2. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
+4. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
    once, but **Ollama cannot serve reranking models.** Verified 9 Aug: an Ollama maintainer states it
    plainly in [issue #10467](https://github.com/ollama/ollama/issues/10467), closed as a duplicate of
    [#3368](https://github.com/ollama/ollama/issues/3368), the feature request open since March 2024.
