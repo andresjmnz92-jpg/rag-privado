@@ -38,6 +38,16 @@ foreach ($file in $files) {
   $frontmatter = $Matches[1]
   $body = $Matches[2].Trim()
 
+  # The heading is glued to its first paragraph on purpose. n8n's recursive
+  # splitter cuts on blank lines first, so when the following block nearly fills
+  # the chunk the ~70-character heading does not fit alongside it and ends up
+  # alone: 77 of the 653 fragments of the first load were headings with no body.
+  # Measured across the 148 sections, heading plus first paragraph tops out at
+  # 984 characters, so they always fit in one chunk once the blank line is gone.
+  # No section sign in the pattern: PowerShell 5.1 reads a BOM-less .ps1 as ANSI
+  # and would mangle it. Every section file carries exactly one '##' heading.
+  $body = $body -replace '(?m)^(##[^\r\n]*)\r?\n\s*\r?\n', "`$1`n"
+
   $meta = @{}
   foreach ($line in ($frontmatter -split "`r?`n")) {
     if ($line -match '^(\w+):\s*"?(.*?)"?\s*$') { $meta[$Matches[1]] = $Matches[2] }

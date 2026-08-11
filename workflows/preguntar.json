@@ -44,7 +44,7 @@
       "parameters": {
         "mode": "retrieve-as-tool",
         "toolDescription": "Busca fragmentos relevantes en los documentos cargados. Usala SIEMPRE antes de responder cualquier pregunta sobre normativa o contenido de los documentos.",
-        "tableName": "documentos_v2",
+        "tableName": "documentos_v3",
         "topK": 20,
         "options": {}
       },
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "content": "## Ask the documents\n\nThe question is turned into a vector with the SAME model used at load time (bge-m3). The 20 nearest fragments are retrieved and only those reach the writer.\n\nThe prompt forbids answering from memory and forces the exact sentence \"No encontre eso en los documentos cargados\" when the answer is not in the fragments. That literal string is what makes the system measurable.\n\n**Corpus: documentos_v2** — HIPAA pulled from the eCFR API, one section per file. Every fragment carries its § and its official citation.",
+        "content": "## Ask the documents\n\nThe question is turned into a vector with the SAME model used at load time (bge-m3). The 20 nearest fragments are retrieved and only those reach the writer.\n\nThe prompt forbids answering from memory and forces the exact sentence \"No encontre eso en los documentos cargados\" when the answer is not in the fragments. That literal string is what makes the system measurable.\n\n**Corpus: documentos_v3** — HIPAA pulled from the eCFR API, one section per file. Every fragment carries its § and its official citation.\n\nv3 replaces v2, where 77 fragments were a bare section heading with no body: the splitter cuts on blank lines and the title did not fit alongside the paragraph after it. Gluing them turned 653 fragments into 581 and moved MRR from 0.865 to 0.938 on the same 16 questions.",
         "height": 260,
         "width": 620,
         "color": 3

@@ -67,7 +67,7 @@
     {
       "parameters": {
         "mode": "insert",
-        "tableName": "documentos_v2",
+        "tableName": "documentos_v3",
         "options": {}
       },
       "id": "3f1c9a20-0000-4000-8000-000000000005",

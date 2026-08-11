@@ -46,6 +46,12 @@ en esas cuatro concretamente la deja en los puestos **1, 1, 2 y 1**. El recupera
 techo — las cuatro fallan al redactar. La búsqueda híbrida se construyó para arreglarlas y empeoró
 la recuperación; ver *Construido, medido, descartado*.
 
+> **Esta tabla se midió sobre el corpus tal como estaba el 9 de agosto, y no se ha vuelto a correr.**
+> El 10 de agosto el corpus se reconstruyó dos veces —ver *Un defecto que el puntaje no podía ver*—
+> y los números de recuperación mejoraron. Volver a correr estas veinte preguntas cuesta tokens de
+> OpenAI y un golden dataset lo bastante grande para que el resultado signifique algo, así que el
+> puntaje de abajo se queda como se midió en vez de reescribirse en silencio.
+
 ---
 
 ## Qué responde de verdad
@@ -84,9 +90,10 @@ INDEXAR — se paga una vez, ~9 min en 4 vCPU sin GPU
                                     embeddings BGE-M3, en local ────────┤
                                                                         ↓
                                                 PostgreSQL + pgvector
-                                                653 fragmentos, cada uno con
-                                                su §, su cita oficial y la
-                                                fecha en que se descargó
+                                                581 fragmentos, cada uno con el
+                                                encabezado de su sección en el
+                                                texto, más su §, su cita oficial
+                                                y la fecha en que se descargó
 
 
 PREGUNTAR — mediana 16 s
@@ -153,7 +160,7 @@ La norma la publica el eCFR con una **API pública sin llave**, y devuelve cada 
 reconstruir con un regex **estaba en la fuente desde el principio**.
 
 ```
-3 llamadas a la API  →  148 archivos Markdown, uno por sección  →  653 fragmentos,
+3 llamadas a la API  →  148 archivos Markdown, uno por sección  →  581 fragmentos,
                         cada uno con su §, su cita oficial y su fecha de descarga
 ```
 
@@ -179,6 +186,85 @@ no había forma de saberlo sin comprobarlo**, y una llamada de dos minutos reemp
 re-verificación.
 
 Para un cliente eso no es una nota al pie, es el servicio: **sus documentos también envejecen.**
+
+---
+
+## Un defecto que el puntaje no podía ver
+
+Encontrado el 10 de agosto midiendo el costo por consulta, no buscándolo: muchos de los fragmentos
+recuperados eran un encabezado de sección y nada más.
+
+Contado contra la base de datos: **80 de 653 fragmentos eran una sola línea que empezaba por `##`.**
+Tres son secciones `[Reserved]` que de verdad no tienen cuerpo. **Los otros 77 eran un defecto.**
+
+La causa es una línea en blanco. El partidor corta primero por línea en blanco, y todos los archivos
+de sección se ven así:
+
+```
+## § 164.512 Uses and disclosures for which…
+                                              ← esta línea en blanco es el defecto
+(a) A covered entity may use or disclose…
+```
+
+Cuando el bloque siguiente ya casi llena el fragmento de 1000 caracteres, el encabezado de unos 70
+no cabe junto a él y queda solo. Por eso los cuerpos medían entre 985 y 997 caracteres: el partidor
+llena hasta el tope y deja el título afuera.
+
+**El arreglo es una línea** — quitar la línea en blanco antes de enviar cada sección. Verificado
+antes de correrlo, no después: en las 148 secciones, el encabezado más el primer párrafo llega como
+mucho a **984 caracteres** (mediana 242), así que siempre caben en un fragmento y el partidor nunca
+tiene que separarlos.
+
+Después una segunda versión, cambiando exactamente una cosa: los mismos fragmentos con **el
+encabezado de la sección al inicio de cada uno**, para que un trozo que dice `(D) ABO blood type and
+rh factor` siga diciendo a qué pertenece. Mismos cortes, vectorizados de nuevo — la guía es la única
+variable.
+
+| | v2 — como se midió el 9 ago | v3 — encabezado pegado | v4 — encabezado en todos |
+|---|---|---|---|
+| Fragmentos | 653 | **581** | 581 |
+| Fragmentos que son solo encabezado | **80** | 3 | 3 |
+| Recall@10 | 16/16 | 16/16 | 16/16 |
+| MRR@10 | 0.865 | 0.938 | **0.969** |
+| Preguntas resueltas en el puesto 1 | 12/16 | 14/16 | **15/16** |
+
+**Lo que no se puede afirmar con esto.** El recall no se movió: ya estaba en el techo antes de
+empezar. De v3 a v4 cambió de puesto exactamente **una** pregunta, y una pregunta no es un
+resultado; una prueba pareada necesita al menos seis pares discordantes en la misma dirección para
+bajar de p < 0,05. Al 6% de cambio observado, eso serían unas 96 preguntas, no 50.
+
+**Lo que sí se cuenta en vez de muestrearse.** v4 cuesta **639 caracteres más por consulta, un
+4,0%** — medido sobre el top-20 real de las dieciséis preguntas, no estimado a partir de una media.
+Son unas 160 fichas de entrada de más. Aquí no va una cifra en dólares a propósito: los precios de
+las API se mueven, y un número que envejece mal es peor que ningún número.
+
+**v4 se midió y no se adopta. El agente corre v3.**
+
+El argumento para adoptarlo era que un fragmento que se explica solo ayuda al modelo a redactar, y
+ese argumento se cayó al mirarlo de cerca. Leyendo lo que el recuperador entrega de verdad, cada
+fragmento ya llega así:
+
+```json
+{"pageContent": "...", "metadata": {"seccion": "164.502", "citation": "45 CFR 164.502", ...}}
+```
+
+**El modelo ya tenía el número de sección y la cita oficial, por los metadatos, antes de que v4
+existiera.** Lo que el encabezado le añade al texto es el título descriptivo, y eso solo cambia el
+vector, no lo que sabe el redactor. Así que v4 mejora la recuperación, en una pregunta, y nada más
+que se pueda demostrar.
+
+En contra: 4% más de fichas en cada consulta para siempre, un paso más de instalación, y un script
+de 120 líneas que este repositorio tendría que cargar y mantener. **Una pregunta que no se distingue
+del ruido no paga eso.** La tabla `documentos_v4` se queda en el servidor —borrar un experimento
+medido sería esconder el resultado— pero no está en la tubería y su script no está en este repo.
+
+Es el mismo veredicto que la búsqueda híbrida, y por el mismo camino: construido, medido, no
+adoptado.
+
+**La parte incómoda:** nada de esto se veía en el 16/20. Un puntaje cuenta respuestas buenas y
+malas; no puede ver 77 fragmentos vacíos ocupando puestos, ni un encabezado colocado por encima del
+texto al que pertenece. **Hizo falta medir el costo —una métrica que no tiene nada que ver con la
+calidad— para encontrar un defecto de calidad.**
 
 ---
 
@@ -289,16 +375,18 @@ Van escritos porque un resultado sin sus límites no es un resultado.
   el resultado; el porcentaje es un orden de magnitud.
 - **Una sola ejecución por pregunta.** La P14 demostró que el modelo da respuestas distintas ante
   entradas idénticas.
-- **653 fragmentos.** Pedir 20 es el 3% de este corpus; contra 100.000 sería el 0.02%. **El arreglo
+- **581 fragmentos.** Pedir 20 es el 3% de este corpus; contra 100.000 sería el 0.02%. **El arreglo
   del `topK` no escala.**
 - **Solo búsqueda vectorial, sin híbrida — y ahora eso es una decisión, no una carencia.** Los
   embeddings encuentran por significado, no por cadena exacta. En la medición de Anthropic, sumar
   BM25 bajó el fallo de recuperación de 3.7% a 2.9%; esta máquina no puede correr BM25, y la versión
   con `ts_rank_cd` se midió aquí y **empeoró** la recuperación. Ver *Construido, medido, descartado*.
-- **La tabla no tiene índice vectorial** — solo la clave primaria. Cada búsqueda recorre los 653
+- **La tabla no tiene índice vectorial** — solo la clave primaria. Cada búsqueda recorre los 581
   fragmentos uno por uno.
-- **Dos de los veinte puestos recuperados eran encabezados de sección** — una línea cada uno. Un 10%
-  del contexto desperdiciado.
+- ~~**Dos de los veinte puestos recuperados eran encabezados de sección** — una línea cada uno. Un
+  10% del contexto desperdiciado.~~ **Arreglado el 10 ago.** Eran 77 fragmentos defectuosos de 653,
+  y sobre las dieciséis preguntas ocupaban 16 de 160 puestos. Ahora cero. Ver *Un defecto que el
+  puntaje no podía ver*.
 - **El § 160.404 remite a la parte 102 del 45 CFR para los montos ajustados por inflación, y la
   parte 102 no está en el corpus.** La norma se referencia fuera de sus propias partes.
 
@@ -334,9 +422,16 @@ medición no las puede separar:
 
 **Así que "la búsqueda híbrida empeoró esto" es exacto; "la búsqueda híbrida empeora las cosas" no
 lo es.** La recuperación híbrida es una familia de configuraciones y aquí se midió una sola.
-Aislar los tres factores serían tres corridas, una por factor, contra la misma referencia fija: la
-vectorial pura en 16/16 y MRR 0,865, que no se mueve cuando cambian los pesos. Hasta que eso se
-corra, la explicación del idioma es la hipótesis principal, no una causa demostrada.
+Aislar los tres factores serían tres corridas, una por factor, contra la misma referencia fija.
+Hasta que eso se corra, la explicación del idioma es la hipótesis principal, no una causa demostrada.
+
+> **Y ahora hay un cuarto factor, encontrado después.** Esto se midió sobre el corpus v2, donde 77
+> fragmentos eran solo un encabezado de sección. **Un encabezado suelto contiene el número de sección
+> como cadena literal, que es justo lo que mejor encuentra la búsqueda por texto** — así que parte de
+> lo que la mitad léxica estaba ordenando eran fragmentos vacíos. Eso no rescata el resultado:
+> significa que la corrida tiene un factor confundido más de los que admite la tabla de arriba, y que
+> las corridas de aislamiento van sobre el corpus limpio. La referencia fija para ellas es
+> **vectorial pura en 16/16 y MRR 0,938** sobre v3.
 
 **Lo que la misma medición dijo de los cuatro fallos abiertos.** Las preguntas 6, 7, 8 y 15 fallaron
 en la ronda 3. Sus puestos en vectorial pura son **1, 1, 2 y 1** — la sección correcta ya llegaba
@@ -358,7 +453,19 @@ techo para este corpus.
 
 ## Lo que sigue
 
-1. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
+1. **Volver a correr las veinte preguntas sobre v3.** Todos los números de recuperación mejoraron y
+   el puntaje no se ha vuelto a medir, así que ahora mismo la tabla de resultados describe un corpus
+   que el sistema ya no usa.
+
+2. **Un golden dataset más difícil, no solo más grande.** El recall está en 16/16, así que añadir
+   cincuenta preguntas de la misma dificultad añade cincuenta preguntas que nadie falla y no compra
+   ni un gramo de poder estadístico. Lo que compra poder son preguntas que el sistema pueda perder:
+   respuestas repartidas en dos o tres secciones, palabras que no aparecen en el texto, casos
+   negativos y excepciones, y secciones que se parecen entre sí. Cada una necesita su respuesta
+   verificada escrita, no solo su número de sección — si no, mide si encontró la página, no si la
+   leyó bien.
+
+3. **Arreglar en el prompt los dos fallos de cita.** Ni el chunking ni el `topK` tocan un fallo de
    generación — y la medición de arriba dice que la generación es donde viven los fallos que quedan.
 
 2. **Reranking, y no en esta máquina.** `bge-reranker-v2-m3` atacaría los dos tipos de fallo a la
@@ -382,7 +489,9 @@ techo para este corpus.
 ```
 docker-compose.yml              Postgres con pgvector y Ollama, sin puertos publicados
 corpus/descargar-corpus.ps1     Baja 45 CFR 160/162/164 de la API del eCFR → un .md por sección
-corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de n8n para indexarla
+corpus/cargar-en-n8n.ps1        Manda cada sección a un webhook autenticado de n8n para indexarla.
+                                También pega cada encabezado a su primer párrafo — una línea, y el
+                                porqué está en el comentario de encima
 workflows/cargar-secciones.json El workflow de indexación. Se importa en n8n.
 workflows/preguntar.json        El workflow de consulta: agente, recuperador y embeddings locales.
 workflows/system-prompt.md      Las cinco reglas del prompt, y qué se midió que hace cada una

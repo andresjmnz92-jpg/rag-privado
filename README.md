@@ -45,6 +45,12 @@ and for those four specifically it ranks it **1, 1, 2 and 1**. The retriever is 
 ceiling — the four fail while writing the answer. Hybrid search was built to fix them and made
 retrieval worse; see *Built, measured, rejected*.
 
+> **This table was measured on the corpus as it stood on 9 August, and it has not been re-run.**
+> On 10 August the corpus was rebuilt twice — see *A defect the score could not see* — and the
+> retrieval numbers improved. Re-running these twenty questions costs OpenAI tokens and a golden
+> dataset large enough to make the result mean something, so the score below stays as measured
+> rather than being quietly restated.
+
 ---
 
 ## What it actually answers
@@ -83,8 +89,9 @@ INGEST — paid once, ~9 min on 4 vCPU with no GPU
                                        BGE-M3 embeddings, local ──┤
                                                                   ↓
                                               PostgreSQL + pgvector
-                                              653 fragments, each carrying
-                                              its §, its official citation
+                                              581 fragments, each carrying
+                                              its section heading in the text,
+                                              plus its §, its official citation
                                               and the date it was retrieved
 
 
@@ -151,7 +158,7 @@ its own `<DIV8 TYPE="SECTION">` with its number and official citation as attribu
 I was about to reconstruct with a regex **was in the source all along**.
 
 ```
-3 API calls  →  148 Markdown files, one per section  →  653 chunks,
+3 API calls  →  148 Markdown files, one per section  →  581 chunks,
                 each carrying its §, its official citation and its retrieval date
 ```
 
@@ -177,6 +184,83 @@ that I could not have known without checking**, and a two-minute API call replac
 re-verification.
 
 For a customer this is the service, not a footnote: **their documents age too.**
+
+---
+
+## A defect the score could not see
+
+Found on 10 August while measuring cost per query, not while looking for it: many of the retrieved
+fragments were a section heading and nothing else.
+
+Counted against the database: **80 of 653 chunks were a single line starting with `##`.** Three are
+`[Reserved]` sections that genuinely have no body. **The other 77 were a defect.**
+
+The cause is one blank line. The recursive splitter cuts on blank lines first, and every section
+file looks like this:
+
+```
+## § 164.512 Uses and disclosures for which…
+                                              ← this blank line is the defect
+(a) A covered entity may use or disclose…
+```
+
+When the following block nearly fills the 1000-character chunk, the ~70-character heading does not
+fit alongside it and is left on its own. That is why the bodies measured 985–997 characters: the
+splitter packs to the limit and strands the title.
+
+**The fix is one line** — delete the blank line before sending each section. Verified before running
+it, not after: across all 148 sections, heading plus first paragraph tops out at **984 characters**
+(median 242), so they always fit in one chunk and the splitter never has to separate them.
+
+Then a second version, changing exactly one thing: the same chunks with **the section heading
+prepended to every one of them**, so a fragment reading `(D) ABO blood type and rh factor` still
+says what it belongs to. Same cut points, re-embedded — the guide is the only variable.
+
+| | v2 — as measured on 9 Aug | v3 — heading joined | v4 — heading on every chunk |
+|---|---|---|---|
+| Chunks | 653 | **581** | 581 |
+| Heading-only chunks | **80** | 3 | 3 |
+| Recall@10 | 16/16 | 16/16 | 16/16 |
+| MRR@10 | 0.865 | 0.938 | **0.969** |
+| Questions answered at rank 1 | 12/16 | 14/16 | **15/16** |
+
+**What cannot be claimed from this.** Recall never moved — it was at the ceiling before any of this.
+From v3 to v4 exactly **one** question changed rank, and one question is not a result; a paired test
+needs at least six discordant pairs in the same direction to clear p < 0.05. At the observed 6% rate
+of change that would take roughly 96 questions, not 50.
+
+**What is countable rather than sampled.** v4 costs **639 more characters per query — 4.0%** —
+measured across the actual top-20 of all sixteen questions, not estimated from an average. That is
+roughly 160 extra input tokens. No dollar figure is quoted here on purpose: API prices move, and a
+number that ages badly is worse than no number.
+
+**v4 was measured and is not adopted. The agent runs v3.**
+
+The case for adopting it was that a self-describing fragment helps the model write, and that case
+fell apart on inspection. Reading what the retriever actually hands over shows each fragment already
+arrives like this:
+
+```json
+{"pageContent": "...", "metadata": {"seccion": "164.502", "citation": "45 CFR 164.502", ...}}
+```
+
+**The model already had the section number and the official citation, from the metadata, before v4
+existed.** What the heading adds to the text is the descriptive title — and that only changes the
+embedding, not what the writer knows. So v4 improves retrieval, by one question, and demonstrably
+nothing else.
+
+Against that: 4% more tokens on every query forever, an extra installation step, and a 120-line
+script this repository would have to carry and maintain. **One question that cannot be distinguished
+from noise does not pay for that.** The `documentos_v4` table stays on the server — deleting a
+measured experiment would hide the result — but it is not in the pipeline and its build script is
+not in this repo.
+
+This is the same verdict as hybrid search, reached the same way: built, measured, not adopted.
+
+**The uncomfortable part:** none of this was visible in the 16/20 score. A score counts right and
+wrong answers; it cannot see 77 empty fragments taking up slots, and it cannot see a heading ranked
+above the text it belongs to. **It took measuring cost — a metric that has nothing to do with
+quality — to find a quality defect.**
 
 ---
 
@@ -285,14 +369,16 @@ Stated because a result without its limits isn't a result.
   *"certainly not less than 100"*. Even 50 only narrows the margin to ±12. The paired comparison is
   the result; the percentage is an order of magnitude.
 - **One run per question.** Q14 proved the model gives different answers to identical inputs.
-- **653 chunks.** Asking for 20 is 3% of this corpus; against 100,000 it would be 0.02%. **The
+- **581 chunks.** Asking for 20 is 3% of this corpus; against 100,000 it would be 0.02%. **The
   `topK` fix does not scale.**
 - **Vector search only, no hybrid — and that is now a decision, not a gap.** Embeddings match by
   meaning, not exact string. In Anthropic's measurement, adding BM25 dropped retrieval failure from
   3.7% to 2.9%; this box cannot run BM25, and the `ts_rank_cd` version was measured here and made
   retrieval worse. See *Built, measured, rejected*.
-- **No vector index on the table** — only the primary key. Every search scans all 653 chunks.
-- **Two of twenty retrieved slots were section headings** — one line each. ~10% of context wasted.
+- **No vector index on the table** — only the primary key. Every search scans all 581 chunks.
+- ~~**Two of twenty retrieved slots were section headings** — one line each. ~10% of context
+  wasted.~~ **Fixed 10 Aug.** It was 77 defective chunks out of 653, and across the sixteen
+  questions they occupied 16 of 160 slots. Zero now. See *A defect the score could not see*.
 - **§ 160.404 points to 45 CFR Part 102 for inflation-adjusted penalties, and Part 102 is not in the
   corpus.** The regulation cross-references outside its own parts.
 
@@ -328,9 +414,15 @@ measurement cannot separate them:
 
 **So "hybrid search made this worse" is accurate; "hybrid search makes things worse" is not.**
 Hybrid retrieval is a family of configurations, and only one of them was measured here. Isolating
-the three would take one run per factor against the same fixed baseline — plain vector search at
-16/16 and MRR 0.865, which does not move when the weights do. Until that is run, the language
-explanation is the leading hypothesis, not an established cause.
+the three would take one run per factor against the same fixed baseline. Until that is run, the
+language explanation is the leading hypothesis, not an established cause.
+
+> **And there is now a fourth factor, found afterwards.** This was measured on the v2 corpus, where
+> 77 chunks were a bare section heading. **A bare heading contains the section number as a literal
+> string, which is exactly what lexical search matches best** — so part of what the lexical half was
+> ranking was empty fragments. That does not rescue the result; it means the run has one more
+> confound than the table above admits, and the isolation runs belong on the clean corpus. The
+> fixed baseline for them is **plain vector search at 16/16, MRR 0.938** on v3.
 
 **What the same measurement showed about the four open failures.** Questions 6, 7, 8 and 15 failed
 in round 3. Their plain-vector ranks are **1, 1, 2 and 1** — the right section was already arriving
@@ -352,7 +444,17 @@ ceiling for this corpus.
 
 ## What's next
 
-1. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
+1. **Re-run the twenty questions on v3.** Every retrieval number improved and the score has not been
+   re-measured, so right now the headline table describes a corpus the system no longer uses.
+
+2. **A harder golden dataset, not just a bigger one.** Recall sits at 16/16, so adding fifty
+   questions of the same difficulty adds fifty questions nobody fails and buys no statistical power
+   at all. What buys power is questions the system can lose: answers split across two or three
+   sections, wording that does not appear in the text, negative cases and exceptions, and sections
+   that look alike. Each one needs its verified answer written down, not just its section number —
+   otherwise it measures whether the right page was found, not whether it was read correctly.
+
+3. **Fix the two citation failures in the prompt.** Neither chunking nor `topK` touches a generation
    failure — and the measurement above says generation is where the remaining failures live.
 
 2. **Reranking, and not on this box.** `bge-reranker-v2-m3` would address both open failure types at
@@ -375,7 +477,9 @@ ceiling for this corpus.
 ```
 docker-compose.yml              Postgres + pgvector and Ollama, no published ports
 corpus/descargar-corpus.ps1     Pulls 45 CFR 160/162/164 from the eCFR API → one .md per section
-corpus/cargar-en-n8n.ps1        Posts each section to an authenticated n8n webhook for indexing
+corpus/cargar-en-n8n.ps1        Posts each section to an authenticated n8n webhook for indexing.
+                                Also glues each heading to its first paragraph — one line, and the
+                                reason it is there is in the comment above it
 workflows/cargar-secciones.json The ingestion workflow. Import into n8n.
 workflows/preguntar.json        The query workflow: agent, retriever and local embeddings.
 workflows/system-prompt.md      The five prompt rules, and what each one was measured to do
