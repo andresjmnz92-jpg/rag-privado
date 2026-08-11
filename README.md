@@ -12,6 +12,29 @@ it breaks, and can prove which fix was worth doing — including the ones I got 
 **Server:** Hetzner CX33 — 4 vCPU, 8 GB RAM, no GPU · ~$9/month
 **Corpus:** HIPAA, 45 CFR Parts 160/162/164 — 148 sections from the eCFR API, current as of 2026-08-06
 
+### Ask it yourself — no signup, no password
+
+**→ [Open the chat](https://n8n.sikorre.com/webhook/3271ff7e-5085-48dd-809f-62cab6036813/chat)**
+
+Two questions worth asking, in this order:
+
+1. *¿Qué plazo tiene una entidad para notificar a los individuos afectados por una brecha?*
+2. *¿Cuál es la multa máxima del GDPR?*
+
+**The second one is the point.** GDPR is not in this corpus, and `gpt-5-mini` knows that answer
+perfectly well. It says *"No encontré eso en los documentos cargados"* instead. A system that stays
+quiet is auditable; one that improvises is a liability, and that is the half a clinic is buying.
+
+It is open on purpose: this corpus is public US regulation, so there is nothing to protect but the
+bill. The bill has a hard stop — a prepaid 5 USD balance with auto-recharge off, roughly 5,000
+questions at the measured ~0.001 USD each. **If it stops answering, the month's budget ran out**;
+mail me at **andresjmnz92@gmail.com** or on
+[LinkedIn](https://linkedin.com/in/andres-jimenez-112915148) and I will top it up.
+
+Worth knowing before you read the answer: **it quotes the regulation in English even though it
+answers in Spanish.** That is deliberate. Translating the quote would insert a second place for the
+answer to go wrong, and the citation is what makes it checkable against the eCFR.
+
 ---
 
 ## Results

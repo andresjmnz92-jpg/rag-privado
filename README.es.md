@@ -13,6 +13,30 @@ dónde se rompe, y puedo probar cuál de los arreglos valía la pena** — inclu
 **Servidor:** Hetzner CX33 — 4 vCPU, 8 GB de RAM, sin GPU · ~$9 al mes
 **Corpus:** HIPAA, 45 CFR partes 160/162/164 — 148 secciones de la API del eCFR, vigentes al 6 ago 2026
 
+### Pruébalo tú — sin registro y sin contraseña
+
+**→ [Abrir el chat](https://n8n.sikorre.com/webhook/3271ff7e-5085-48dd-809f-62cab6036813/chat)**
+
+Dos preguntas que vale la pena hacer, en este orden:
+
+1. *¿Qué plazo tiene una entidad para notificar a los individuos afectados por una brecha?*
+2. *¿Cuál es la multa máxima del GDPR?*
+
+**La segunda es la que importa.** El GDPR no está en este corpus, y `gpt-5-mini` se sabe esa
+respuesta de sobra. En vez de darla dice *"No encontré eso en los documentos cargados"*. Un sistema
+que se calla es auditable; uno que improvisa es un riesgo legal, y esa es la mitad que compra una
+clínica.
+
+Está abierto a propósito: este corpus es normativa pública de Estados Unidos, así que no hay nada
+que proteger salvo la factura. Y la factura tiene un corte duro — saldo prepago de 5 USD sin recarga
+automática, unas 5.000 preguntas al costo medido de ~0,001 USD cada una. **Si deja de responder es
+que se acabó el presupuesto del mes**; escríbeme a **andresjmnz92@gmail.com** o por
+[LinkedIn](https://linkedin.com/in/andres-jimenez-112915148) y lo recargo.
+
+Conviene saberlo antes de leer la respuesta: **cita la norma en inglés aunque responda en español.**
+Es a propósito. Traducir la cita metería un segundo sitio donde la respuesta puede salir mal, y la
+cita textual es lo que permite comprobarla contra el eCFR.
+
 ---
 
 ## Resultados
